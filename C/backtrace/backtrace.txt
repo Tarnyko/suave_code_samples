@@ -1,0 +1,7 @@
+./backtrace(+0x1348)[0x55866a09a348]
+/lib/x86_64-linux-gnu/libc.so.6(+0x42520)[0x7f99d5537520]
+./backtrace(fn3+0x4a)[0x55866a09a48c]
+./backtrace(main+0x102)[0x55866a09a597]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7f99d551ed90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7f99d551ee40]
+./backtrace(_start+0x25)[0x55866a09a1c5]

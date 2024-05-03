@@ -17,8 +17,8 @@
 */
 
 /* Compile with:
- Unix:  gcc -g ...
- Win32: gcc -g ... -ldbghelp      
+ Unix:  gcc -g -rdynamic ...
+ Win32: gcc -g ... -ldbghelp
 */
 
 #include <stdbool.h>
