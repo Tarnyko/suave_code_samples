@@ -1,0 +1,3 @@
+Unless stated otherwise, all examples are C99 minimum.
+
+Under Windows, compiler is assumed to be MinGW-w64 (see: https://www.mingw-w64.org).

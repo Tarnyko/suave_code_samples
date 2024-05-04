@@ -1,5 +1,5 @@
 /*
-* backtrace.c
+* backtrace.cpp
 * Copyright (C) 2024  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -17,39 +17,37 @@
 */
 
 /* Compile with:
- Unix:  gcc -g -rdynamic ...
- Win32: gcc -g ... -ldbghelp
+ Unix:  g++ -g -rdynamic ...
+ Win32: g++ -g ... -ldbghelp
 */
 
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <signal.h>            /* for "signal()" */
+#include <iostream>
+#include <cstdlib>
+#include <cstring>             /* for "std::strchr()" */
+#include <csignal>             /* for "std::signal()" */
 
 #ifdef __unix__
-#  include <fcntl.h>           /* for "open()"   */
-#  include <unistd.h>          /* for "close()"  */
+#  include <fcntl.h>           /* for "open()"        */
+#  include <unistd.h>          /* for "close()"       */
 #  ifdef __linux__ 
 #    include <execinfo.h>      /* for "backtrace()" */
 #  endif
 
 #elif _WIN32
-#  include <windows.h>         /* for "CaptureStackBackTrace()" */
-#  include <dbghelp.h>         /* for "SymInitialize()"         */
+#  include <windows.h>         /* for "CaptureStackBackTrace()"   */
+#  include <dbghelp.h>         /* for "SymInitialize()"           */
 #  if _WIN64
 #    define DWORDCAST DWORD64
 #  else
 #    define DWORDCAST DWORD
 #  endif
-
 #endif
 
 #define BACKTRACE_FILE   "backtrace.txt"
 #define MAX_ADDRESSES    20
 
 
-static void catch_crash(int signal)
+extern "C" void catch_crash(int signal)
 {
     void *bt[MAX_ADDRESSES];
     int bt_size;
@@ -103,48 +101,91 @@ static void catch_crash(int signal)
 }
 
 
-void fn1 (const char *txt, bool crash)
+class Parent
 {
-    printf("fn1: %s\n", txt); fflush(stdout);
-    if (crash) {
-        *(int*)0 = 0; }
-}
+  public:
+    Parent(std::string s) { str = s; }
+    ~Parent() = default;
+  
+    void fn1 (std::string txt, bool crash)
+    {
+        std::cout << "fn1: "<< txt <<",str="<< str << ", in class: " << typeid(*this).name()+1 << std::endl << std::flush;
+        if (crash) {
+            *(int*)0 = 0; }
+    }
 
-int fn2 (int a, int b, bool crash)
-{
-    printf("fn2: %d-%d\n", a, b); fflush(stdout);
-    if (crash) {
-        *(int*)0 = 0; }
-    return a + b;
-}
+    int fn2 (int a, int b, bool crash)
+    {
+        std::cout << "fn2: "<< a<<"-"<<b<<",str="<< str << ", in class: " << typeid(*this).name()+1 << std::endl << std::flush;
+        if (crash) {
+            *(int*)0 = 0; }
+        return a + b;
+    }
 
-void* fn3 (void *ptr, bool crash)
+    void* fn3 (const char *ptr, bool crash)
+    {
+        std::cout << "fn3: "<< ptr <<",str="<< str << ", in class: " << typeid(*this).name()+1 << std::endl << std::flush;
+        if (crash) {
+            *(int*)0 = 0; }
+        return (void*) ptr;
+    }
+    
+    virtual void fn4 (bool crash)
+    {
+        std::cout << "fn4: str="<< str << ", in class: " << typeid(*this).name()+1 << std::endl << std::flush;
+        if (crash) {
+            *(int*)0 = 0; }
+    }
+    
+    static void fn5 (bool crash)
+    {
+        std::cout << "fn5_Parent-Child" << std::endl << std::flush;
+        if (crash) {
+            *(int*)0 = 0; }
+    }
+  protected:
+    std::string str;
+};
+
+class Child : public Parent
 {
-    printf("fn3: %s\n", (const char*)ptr); fflush(stdout);
-    if (crash) {
-        *(int*)0 = 0; }
-    return ptr;
-}
+  public:
+	// this is C++11
+	using Parent::Parent;
+
+	void fn4 (bool crash) override
+	{
+	    std::cout << "fn4_override: str=" << str << ", in class: " << typeid(*this).name()+1 << std::endl;
+	    if (crash) {
+                *(int*)0 = 0; }
+	}
+};
 
 int main (int argc, char *argv[])
 {
     if (argc < 2) {
-        printf(" Usage:\n%s 1 2 3 \t[OK]\n%s 1 2 3c \t[3:crash]\n(Manuel Bachmann <tarnyko.tarnyko.net>)\n\n", argv[0], argv[0]);
+        printf(" Usage:\n%s 1 2 3 4 5\t\t[OK]\n%s 1 2 3c 4 5\t\t[3:crash]\n%s 1 2 3p 4pc 5\t[3:parent;4:parent+crash]\n(Manuel Bachmann <tarnyko.tarnyko.net>)\n\n", argv[0],argv[0],argv[0]);
         return EXIT_SUCCESS; }
 
-    signal(SIGSEGV, catch_crash);
+    std::signal(SIGSEGV, catch_crash);
+
+    auto p = Parent("MyParent");
+    auto c = Child("MyChild");
 
     for(int i = 1; i < argc; i++)
     {
         const char *arg = argv[i];
 
-        bool crash = (arg[strlen(arg)-1] == 'c') ? true : false;
-        switch (atoi(arg))
+        bool parent = (std::strchr(arg, 'p') != NULL) ? true : false;
+        bool crash = (std::strchr(arg, 'c') != NULL) ? true : false;
+        switch (std::atoi(arg))
         {
-            case 1: fn1(arg, crash);        break;
-            case 2: fn2(argc,argc, crash);  break;
-            case 3: fn3((void*)arg, crash); break;
-            default:                        break;
+            case 1:  parent ? p.fn1(arg, crash) : c.fn1(arg, crash);              break;
+            case 2:  parent ? p.fn2(argc,argc, crash) : c.fn2(argc,argc, crash);  break;
+            case 3:  parent ? p.fn3(arg, crash) : c.fn3(arg, crash);              break;
+            case 4:  parent ? p.fn4(crash) : c.fn4(crash);                        break;
+            case 5:  parent ? Parent::fn5(crash) : Child::fn5(crash);             break;
+            default:                                                              break;
         }
     }
 

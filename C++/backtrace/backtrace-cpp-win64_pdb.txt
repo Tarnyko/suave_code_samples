@@ -1,0 +1,12 @@
+11: catch_crash - C:\Users\Administrateur\backtrace.cpp 93 - 0x3FF613F7
+10: main - 0x3FF61674
+9: _C_specific_handler - 0x76DD852C
+8: RtlDecodePointer - 0x76DE9C80
+7: RtlUnwindEx - 0x76DD8610
+6: KiUserExceptionDispatcher - 0x76E1121A
+5: fn5 - C:\Users\Administrateur\backtrace.cpp 148 - 0x3FF761D0
+4: main - C:\Users\Administrateur\backtrace.cpp 192 - 0x3FF61674
+3: public_all - 0x3FF61000
+2: public_all - 0x3FF61000
+1: BaseThreadInitThunk - 0x76BB6520
+0: RtlUserThreadStart - 0x76DEC520
