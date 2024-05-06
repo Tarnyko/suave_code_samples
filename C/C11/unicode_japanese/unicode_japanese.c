@@ -28,7 +28,7 @@
 #include <locale.h>  /* for "setlocale()","LC_ALL" */
 
 #ifdef _WIN32
-#  include <windows.h> /* for "SetConsoleOutput()","MultiByteToWideChar()" */
+#  include <windows.h>  /* for "SetConsoleOutput()","MultiByteToWideChar()" */
 #  define UCHAR wchar_t
 #  define UNICODE(str) L ## #str
 #  define UFOPEN_S(X,Y,Z) _wfopen_s(X,Y,L ## Z)
@@ -42,12 +42,11 @@
 #  define UFPRINTF_S(X,Y,Z) fprintf(X,u8 ## Y,Z)
 #  define USNPRINTF_S(X,Y,Z, ...) snprintf(X,Y, u8 ## Z, __VA_ARGS__)
 #  define USTRLEN_S(X) strlen(X)
-int UFOPEN_S(FILE **X, const UCHAR *Y, const char *Z) {
-  if ((*X = fopen(Y, Z)) == NULL)
-    return errno;
-  else
-    return 0;
-}
+  int UFOPEN_S(FILE **X, const UCHAR *Y, const char *Z) {
+    if ((*X = fopen(Y, Z)) == NULL)
+      return errno;
+    else
+      return 0; }
 
 #endif
 
@@ -57,7 +56,7 @@ int main (int argc, char *argv[])
 # ifdef _WIN32
     UINT old_cp = GetConsoleOutputCP();
     SetConsoleOutputCP(932);   /* Japanese codepage: requires setup */
-    setlocale(LC_ALL, ".932"); /* of regional & console settings.   */
+    setlocale(LC_ALL, ".932"); /* of regional & console settings.  */
 # else
     setlocale(LC_ALL, ".UTF8");
 # endif

@@ -20,7 +20,7 @@
 // g++ -std=c++17 ...
 
 #if defined(__MINGW32__) && (__GNUC__ < 9)
-#  error "Requires MinGW 7.x (GCC 9.x) for 'std::filesystem' !"
+#  error "MinGW only supports 'std::filesystem' from version 7.x (GCC 9.x)."
 #endif
 #include <filesystem>
 #include <iostream>
