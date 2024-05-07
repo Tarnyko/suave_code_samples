@@ -25,8 +25,7 @@
 #  define ENDLINE '\r'
   int getkb (char *code) {
     if (kbhit()) {
-      *code = (char) _getch();
-      return 1; }  
+      return ((*code = (char) _getch()) > 0); }
     return 0; }
 
 #else
@@ -42,8 +41,9 @@
 int main(int argc, char *argv[])
 {
     char c;
-    FILE *f = fopen("log.txt", "w");
-    if (f == NULL) {
+    FILE *f;
+
+    if ((f = fopen("log.txt", "w")) == NULL) {
         fprintf(stderr, "Could not create file 'log.txt'! Exiting...\n");
         return EXIT_FAILURE;
     }
@@ -56,14 +56,13 @@ int main(int argc, char *argv[])
     {
         if (!getkb(&c)) {
             goto print_progress; }
-        
-        /* display AND log input to file */
-        printf("%c", c);
-        fprintf(f, "%c", c);
 
-        /* we do something continuously */
+        printf("%c", c); fprintf(f, "%c", c);
+
+        /* we do something (display text) continuously */
       print_progress:
-        printf("-");
+        printf(" -*-*- \b\b\b\b\b\b\b");
+        printf(" *-*-* \b\b\b\b\b\b\b");
         
         /* pressing [Return] will end the loop */
         if (c == ENDLINE) {
