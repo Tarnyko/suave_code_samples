@@ -48,9 +48,9 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-# ifndef _WIN32
+#  ifndef _WIN32
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
-# endif
+#  endif
 
     while(1)
     {
@@ -69,9 +69,9 @@ int main(int argc, char *argv[])
             break; }
     }
 
-# ifdef _WIN32
+#  ifdef _WIN32
     fputc('\n', f);
-# endif
+#  endif
 
     fclose(f);
     printf("\n All input written to 'log.txt'.\n");

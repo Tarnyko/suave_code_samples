@@ -36,7 +36,7 @@
 // required so that "true/false" get recognized as "bool" and not "int"
 #undef true
 #undef false
-#define true ((_Bool)+1)
+#define true  ((_Bool)+1)
 #define false ((_Bool)+0)
 
 
@@ -51,14 +51,8 @@ struct Value
     size_t idx;
 
     ValueType t;
-    union
-    {
-        int    i;
-        bool   b;
-        double f;
-        char*  s;
-    };   // C11: if anonymous, we can do "value->i", "value->b"....
-
+    union { int i; bool b; double f; char* s; }; /* C11: if anonymous, we can do
+                                                  * "value->i", "value->b"... */
     Value* next;
 };
 
@@ -83,10 +77,10 @@ void list_add_bool(List* list, bool b);
 void list_add_float(List* list, double f);
 void list_add_string(List* list, char* s);
 
-void list_add_idx_int(List* list, size_t idx, int i);
-void list_add_idx_bool(List* list, size_t idx, bool b);
-void list_add_idx_float(List* list, size_t idx, double f);
-void list_add_idx_string(List* list, size_t idx, char* s);
+void list_insert_int(List* list, size_t idx, int i);
+void list_insert_bool(List* list, size_t idx, bool b);
+void list_insert_float(List* list, size_t idx, double f);
+void list_insert_string(List* list, size_t idx, char* s);
 
 // C11: these generic macros will make our life easier
 
@@ -96,15 +90,15 @@ void list_add_idx_string(List* list, size_t idx, char* s);
     double: list_add_float, \
     char *: list_add_string)(L, V)
 
-#define list_add_idx(L, I, V) _Generic((V), \
-    int: list_add_idx_int, \
-    bool: list_add_idx_bool, \
-    double: list_add_idx_float, \
-    char *: list_add_idx_string)(L, I, V)
+#define list_insert(L, I, V) _Generic((V), \
+    int: list_insert_int, \
+    bool: list_insert_bool, \
+    double: list_insert_float, \
+    char *: list_insert_string)(L, I, V)
 
-void list_del_idx(List* list, size_t idx);
-
+void list_del(List* list, size_t idx);
 void list_del_last(List* list);
+void list_del_first(List* list);
 
 void list_destroy(List* list);
 
@@ -115,16 +109,16 @@ size_t list_length(List* list);
 
 // 3) PRIVATE FUNCTIONS
 
-#define LIST_ADD_IDX_CHECK(L, V) list_add_idx(L, (L != NULL) ? L->length : 0, V)
+#define LIST_INSERT_CHECK(L, V) list_insert(L, (L != NULL) ? L->length : 0, V)
 
-#define LIST_ADD_IDX_CHECK_IMPL(L, I, T) \
+#define LIST_INSERT_CHECK_IMPL(L, I, T) \
     assert(L != NULL);           \
     assert(L->length >= I);      \
     Value* v = _value_create(I); \
     _value_set(v, T);            \
     _list_add_value(L, v);
 
-#define LIST_DEL_IDX_CHECK_IMPL(L, I) \
+#define LIST_DEL_CHECK_IMPL(L, I) \
     assert(L != NULL);           \
     assert(L->length > I);       \
     _list_del_value(L, I);
@@ -250,34 +244,37 @@ List* list_create()
 }
 
 void list_add_int(List* l, int v) {
-    LIST_ADD_IDX_CHECK(l, v); }
+    LIST_INSERT_CHECK(l, v); }
 
 void list_add_bool(List* l, bool v) {
-    LIST_ADD_IDX_CHECK(l, v); }
+    LIST_INSERT_CHECK(l, v); }
  
 void list_add_float(List* l, double v) {
-    LIST_ADD_IDX_CHECK(l, v); }
+    LIST_INSERT_CHECK(l, v); }
 
 void list_add_string(List* l, char* v) {
-    LIST_ADD_IDX_CHECK(l, v); }
+    LIST_INSERT_CHECK(l, v); }
 
-void list_add_idx_int(List* list, size_t idx, int i) {
-    LIST_ADD_IDX_CHECK_IMPL(list, idx, i); }
+void list_insert_int(List* list, size_t idx, int i) {
+    LIST_INSERT_CHECK_IMPL(list, idx, i); }
 
-void list_add_idx_bool(List* list, size_t idx, bool b) {
-    LIST_ADD_IDX_CHECK_IMPL(list, idx, b); }
+void list_insert_bool(List* list, size_t idx, bool b) {
+    LIST_INSERT_CHECK_IMPL(list, idx, b); }
 
-void list_add_idx_float(List* list, size_t idx, double f) {
-    LIST_ADD_IDX_CHECK_IMPL(list, idx, f); }
+void list_insert_float(List* list, size_t idx, double f) {
+    LIST_INSERT_CHECK_IMPL(list, idx, f); }
 
-void list_add_idx_string(List* list, size_t idx, char* s) {
-    LIST_ADD_IDX_CHECK_IMPL(list, idx, s); }
+void list_insert_string(List* list, size_t idx, char* s) {
+    LIST_INSERT_CHECK_IMPL(list, idx, s); }
 
-void list_del_idx(List* list, size_t idx) {
-    LIST_DEL_IDX_CHECK_IMPL(list, idx); }
+void list_del(List* list, size_t idx) {
+    LIST_DEL_CHECK_IMPL(list, idx); }
 
 void list_del_last(List* list) {
-    LIST_DEL_IDX_CHECK_IMPL(list, list->length - 1); }
+    LIST_DEL_CHECK_IMPL(list, list->length-1); }
+
+void list_del_first(List* list) {
+    LIST_DEL_CHECK_IMPL(list, 0); }
 
 void list_destroy(List* list)
 {
@@ -298,17 +295,22 @@ void list_dump(List* list)
 {
     assert(list != NULL);
 
-    printf("List length: %ld\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
+    printf("List length: %zd\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
 
     Value *c = list->first;
     for (size_t i = 0; i < list->length; i++) {
-        {  printf("[%ld]: ", c->idx);
+        {  printf("[%zd]: ", c->idx);
+           switch (c->t) {
+               case T_INTEGER: printf("(INTEGER)\t"); break;
+               case T_BOOLEAN: printf("(BOOLEAN)\t"); break;
+               case T_FLOAT  : printf("(FLOAT)\t");   break;
+               case T_STRING : printf("(STRING)\t");  break;
+           }
            _value_dump(c);
            putchar('\n');
         }
         c = c->next;
     }
-
     putchar('\n');
 }
 
@@ -336,11 +338,11 @@ int main (int argc, char *argv[])
     list_add(l, "Tarnyko does C11");
     list_dump(l);
 
-    list_add_idx(l, 1, "Insert this text in 2nd position...");
-    list_add_idx(l, 3, "...and this one in 4th position.");
+    list_insert(l, 1, "Insert this text in 2nd position...");
+    list_insert(l, 3, "...and this one in 4th position.");
     list_dump(l);
 
-    list_del_idx(l, 2);
+    list_del(l, 2);
     list_dump(l);
 
     while (list_length(l) > 0) {
@@ -354,5 +356,5 @@ int main (int argc, char *argv[])
     printf("Press key to continue...\n");
     getchar();
 
-    return 0;
+    return EXIT_SUCCESS;
 }
