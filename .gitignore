@@ -1,0 +1,11 @@
+# Ignore all, un-ignore all with extensions
+*
+!/**/
+!*.*
+
+# (binaries)
+*.a
+*.o
+*.so
+*.dll
+*.exe

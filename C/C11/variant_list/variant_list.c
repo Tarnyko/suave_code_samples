@@ -20,24 +20,22 @@
  gcc -std=c11 ... -lm
 */
 
-#define _GNU_SOURCE      // for "asprintf()","M_PI"
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <math.h>
+#define _GNU_SOURCE      // for "asprintf()"-stdio.h,"M_PI"-math.h
+#include <limits.h>      // for "UCHAR_MAX"
+#include <stdio.h>       // for "printf()"...
+#include <stdbool.h>     // for "bool","_Bool"
+#include <stdlib.h>      // for "atoi()","strtod()"...
+#include <string.h>      // for "strcmp()","memcpy()"...
+#include <errno.h>       // for "errno","errno_t"-C11
+#include <math.h>        // for "lround()"
 
 #ifndef _WIN32
-  typedef int errno_t;   // C11, but only MinGW provides it
+  typedef int errno_t;   // C11 (but only MinGW provides it now)
 #endif
-#define EUNDEF   200
-#define EINTEGER (EUNDEF + 1)
-#define EBOOLEAN (EUNDEF + 2)
-#define EFLOAT   (EUNDEF + 3)
-#define ESTRING  (EUNDEF + 4)
 
-// required so that "true/false" get recognized as "bool" and not "int"
+_Static_assert( ((errno_t)0)+UCHAR_MAX >= UCHAR_MAX, "errno_t invalid"); // C11
+
+// required so that "true/false" get recognized as "bool" by C11's _Generic
 #undef  true
 #undef  false
 #define true  ((_Bool)+1)
@@ -45,6 +43,12 @@
 
 
 // 1) TYPES
+
+#define EUNDEF   200
+#define EINTEGER (EUNDEF + 1)
+#define EBOOLEAN (EUNDEF + 2)
+#define EFLOAT   (EUNDEF + 3)
+#define ESTRING  (EUNDEF + 4)
 
 typedef enum { T_UNDEF, T_INTEGER, T_BOOLEAN, T_FLOAT, T_STRING } ValueType;
 
@@ -55,8 +59,8 @@ struct Value
     size_t idx;
 
     ValueType t;
-    union { int i; bool b; double f; char* s; }; /* C11: if anonymous, we can do
-                                                    "value->i", "value->b"... */
+    union { int i; bool b; double f; char* s; }; /* C11: anonymous, we can do
+                                                    "val->i", "val->b"...  */
     Value* next;
 };
 
@@ -232,8 +236,7 @@ errno_t _value_get_string(Value* v, char** s)
 {
     switch (v->t) {
       case T_INTEGER: asprintf(s,"%d",v->i);   return EINTEGER;
-      case T_BOOLEAN: asprintf(s,"%s",v->b?"true":"false");
-                                               return EBOOLEAN;
+      case T_BOOLEAN: asprintf(s,"%s",v->b?"true":"false"); return EBOOLEAN;
       case T_FLOAT  : asprintf(s,"%.6f",v->f); return EFLOAT;
       case T_STRING : *s = v->s;               break;
       default       :                          return EINVAL;
@@ -461,7 +464,7 @@ int main (int argc, char *argv[])
     list_dump(l);
 
     list_add(l, true);
-    list_add(l, M_PI);
+    list_add(l, M_PI); // 3.14...
     list_add(l, "Tarnyko does C11");
     list_dump(l);
 
@@ -471,26 +474,28 @@ int main (int argc, char *argv[])
 
     { int i;
       list_get(l, 4, &i);
-      printf("(4th element fetched as an integer: %d)\n\n", i);
+      printf("(5th element fetched as an Integer: %d)\n\n", i);
     }
 
     { char* str;
-      printf("Converting all elements to a string now\n");
-      printf("---------------------------------------\n");
+      printf("Fetching all elements as Strings :\n");
+      printf("--------------------------------  \n");
 
       for (int idx = 0; idx < list_length(l); idx++)
       {
-        errno_t err = list_get(l, idx, &str);
+        errno_t res = list_get(l, idx, &str);
         printf("Element %d: '%s',", idx, str);
 
-        switch (err)
+        switch (res)
         {
-          case EINTEGER: printf(" was an Integer.\n"); goto free_str;
-          case EBOOLEAN: printf(" was a Boolean.\n");  goto free_str;
-          case EFLOAT  : printf(" was a Float.\n");    goto free_str;
-          default      : printf(" was really a String!\n"); break;
-          // we need to free memory when auto-converting to string
-          free_str: free(str);
+          case EINVAL  : fprintf(stderr, "[ERR.]\n"); continue;
+          case EAGAIN  : fprintf(stderr, "[LOCK]\n"); continue;
+          case EINTEGER: printf(" is an Integer.\n"); goto free_str;
+          case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
+          case EFLOAT  : printf(" is a Float.\n");    goto free_str;
+          default      : printf(" is already a String!\n"); break;
+          // we need to free memory when auto-converting to String
+          free_str     : free(str);
         }
       }
       puts("");
