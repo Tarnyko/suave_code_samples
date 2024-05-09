@@ -23,14 +23,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <errno.h>
 
-#ifdef _WIN32
-#  include <windows.h>
-#  define SLEEP(T) Sleep(T)
-#else
-#  include <unistd.h>
-#  define SLEEP(T) usleep(T*1000)
+#ifndef _WIN32
+  typedef int errno_t;   // C11, but only MinGW provides it
 #endif
 
 // required so that "true/false" get recognized as "bool" and not "int"
@@ -52,7 +48,7 @@ struct Value
 
     ValueType t;
     union { int i; bool b; double f; char* s; }; /* C11: if anonymous, we can do
-                                                  * "value->i", "value->b"... */
+                                                    "value->i", "value->b"... */
     Value* next;
 };
 
@@ -72,15 +68,15 @@ List;
 
 List* list_create();
 
-void list_add_int(List* list, int i);
-void list_add_bool(List* list, bool b);
-void list_add_float(List* list, double f);
-void list_add_string(List* list, char* s);
+errno_t list_add_int(List* list, int i);
+errno_t list_add_bool(List* list, bool b);
+errno_t list_add_float(List* list, double f);
+errno_t list_add_string(List* list, char* s);
 
-void list_insert_int(List* list, size_t idx, int i);
-void list_insert_bool(List* list, size_t idx, bool b);
-void list_insert_float(List* list, size_t idx, double f);
-void list_insert_string(List* list, size_t idx, char* s);
+errno_t list_insert_int(List* list, size_t idx, int i);
+errno_t list_insert_bool(List* list, size_t idx, bool b);
+errno_t list_insert_float(List* list, size_t idx, double f);
+errno_t list_insert_string(List* list, size_t idx, char* s);
 
 // C11: these generic macros will make our life easier
 
@@ -96,13 +92,13 @@ void list_insert_string(List* list, size_t idx, char* s);
     double: list_insert_float, \
     char *: list_insert_string)(L, I, V)
 
-void list_del(List* list, size_t idx);
-void list_del_last(List* list);
-void list_del_first(List* list);
+errno_t list_del(List* list, size_t idx);
+errno_t list_del_last(List* list);
+errno_t list_del_first(List* list);
 
-void list_destroy(List* list);
+errno_t list_destroy(List* list);
 
-void list_dump(List* list);
+errno_t list_dump(List* list);
 
 size_t list_length(List* list);
 
@@ -112,16 +108,16 @@ size_t list_length(List* list);
 #define LIST_INSERT_CHECK(L, V) list_insert(L, (L != NULL) ? L->length : 0, V)
 
 #define LIST_INSERT_CHECK_IMPL(L, I, T) \
-    assert(L != NULL);           \
-    assert(L->length >= I);      \
+    if (!L || L->length < I) {   \
+        return errno = EINVAL; } \
     Value* v = _value_create(I); \
     _value_set(v, T);            \
-    _list_add_value(L, v);
+    return _list_add_value(L, v);
 
 #define LIST_DEL_CHECK_IMPL(L, I) \
-    assert(L != NULL);           \
-    assert(L->length > I);       \
-    _list_del_value(L, I);
+    if (!L || L->length <= I) {  \
+        return errno = EINVAL; } \
+    return _list_del_value(L, I);
 
 
 Value* _value_create(size_t idx)
@@ -173,10 +169,10 @@ void _value_dump(Value* v)
     }
 }
 
-void _list_add_value(List* list, Value* val)
+errno_t _list_add_value(List* list, Value* val)
 {
-    while (list->locked) {
-        SLEEP(10); }
+    if (list->locked) {
+        return errno = EAGAIN; }
     list->locked = true;
 
     if (val->idx == list->length) {
@@ -202,12 +198,14 @@ void _list_add_value(List* list, Value* val)
 
     list->length++;
     list->locked = false;
+
+    return EXIT_SUCCESS;
 }
 
-void _list_del_value(List* list, size_t idx)
+errno_t _list_del_value(List* list, size_t idx)
 {
-    while (list->locked) {
-        SLEEP(10); }
+    if (list->locked) {
+        return errno = EAGAIN; }
     list->locked = true;
 
     Value* c = list->first;
@@ -233,6 +231,8 @@ void _list_del_value(List* list, size_t idx)
 
     list->length--;
     list->locked = false;
+
+    return EXIT_SUCCESS;
 }
 
 
@@ -243,42 +243,43 @@ List* list_create()
     return (List *) calloc(1, sizeof(List));
 }
 
-void list_add_int(List* l, int v) {
+errno_t list_add_int(List* l, int v) {
     LIST_INSERT_CHECK(l, v); }
 
-void list_add_bool(List* l, bool v) {
+errno_t list_add_bool(List* l, bool v) {
     LIST_INSERT_CHECK(l, v); }
  
-void list_add_float(List* l, double v) {
+errno_t list_add_float(List* l, double v) {
     LIST_INSERT_CHECK(l, v); }
 
-void list_add_string(List* l, char* v) {
+errno_t list_add_string(List* l, char* v) {
     LIST_INSERT_CHECK(l, v); }
 
-void list_insert_int(List* list, size_t idx, int i) {
+errno_t list_insert_int(List* list, size_t idx, int i) {
     LIST_INSERT_CHECK_IMPL(list, idx, i); }
 
-void list_insert_bool(List* list, size_t idx, bool b) {
+errno_t list_insert_bool(List* list, size_t idx, bool b) {
     LIST_INSERT_CHECK_IMPL(list, idx, b); }
 
-void list_insert_float(List* list, size_t idx, double f) {
+errno_t list_insert_float(List* list, size_t idx, double f) {
     LIST_INSERT_CHECK_IMPL(list, idx, f); }
 
-void list_insert_string(List* list, size_t idx, char* s) {
+errno_t list_insert_string(List* list, size_t idx, char* s) {
     LIST_INSERT_CHECK_IMPL(list, idx, s); }
 
-void list_del(List* list, size_t idx) {
+errno_t list_del(List* list, size_t idx) {
     LIST_DEL_CHECK_IMPL(list, idx); }
 
-void list_del_last(List* list) {
+errno_t list_del_last(List* list) {
     LIST_DEL_CHECK_IMPL(list, list->length-1); }
 
-void list_del_first(List* list) {
+errno_t list_del_first(List* list) {
     LIST_DEL_CHECK_IMPL(list, 0); }
 
-void list_destroy(List* list)
+errno_t list_destroy(List* list)
 {
-    assert(list != NULL);
+    if (!list) {
+        return errno = EINVAL; }
 
     while (list->length > 0) {
         Value* c = list->first;
@@ -287,13 +288,15 @@ void list_destroy(List* list)
         list->first = n;
         list->length--;
     }
-
     free(list);
+
+    return EXIT_SUCCESS;
 }
 
-void list_dump(List* list)
+errno_t list_dump(List* list)
 {
-    assert(list != NULL);
+    if (!list) {
+        return errno = EINVAL; }
 
     printf("List length: %zd\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
 
@@ -312,11 +315,13 @@ void list_dump(List* list)
         c = c->next;
     }
     putchar('\n');
+
+    return EXIT_SUCCESS;
 }
 
 size_t list_length(List* list)
 {
-    return list->length;
+    return list ? list->length : 0;
 }
 
 
@@ -344,6 +349,13 @@ int main (int argc, char *argv[])
 
     list_del(l, 2);
     list_dump(l);
+
+    printf("Trying to delete value '%zd'...\n", list_length(l)+1);
+    switch ( list_del(l, list_length(l)) ) {
+      case EAGAIN: fprintf(stderr, "...locked by another thread!\n\n"); break;
+      case EINVAL: fprintf(stderr, "...not found in list!\n\n"); break;
+      default:     printf("...success.\n");
+    }
 
     while (list_length(l) > 0) {
         list_del_last(l);

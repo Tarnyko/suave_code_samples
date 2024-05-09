@@ -34,7 +34,6 @@
 #  define ENDLINE '\n'
   int getkb (char *code) {
     return (read(STDIN_FILENO, code, 1) > 0); }
-
 #endif
 
 
