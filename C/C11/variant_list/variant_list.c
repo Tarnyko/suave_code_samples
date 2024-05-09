@@ -17,23 +17,28 @@
 */
 
 /* Compile with:
- gcc -std=c11 ... -lm
+ Linux (glibc>=2.31) / Win32 (MinGW>=13.x):  gcc -std=c11 ... -lm
+ Linux (older): gcc -std=c11 -pthread -DHAVE_TIMESPEC_GET ... -lm
+ Win32 (older): gcc -std=c11 -pthread ... -lm
 */
 
-#define _GNU_SOURCE      // for "asprintf()"-stdio.h,"M_PI"-math.h
-#include <limits.h>      // for "UCHAR_MAX"
-#include <stdio.h>       // for "printf()"...
-#include <stdbool.h>     // for "bool","_Bool"
-#include <stdlib.h>      // for "atoi()","strtod()"...
-#include <string.h>      // for "strcmp()","memcpy()"...
-#include <errno.h>       // for "errno","errno_t"-C11
-#include <math.h>        // for "lround()"
+#define _GNU_SOURCE       // for "asprintf()"-stdio.h,"M_PI"-math.h
+#include <limits.h>       // for "UCHAR_MAX"
+#include <math.h>         // for "lround()"
+#include <stdio.h>        // for "printf()"...
+#include <stdbool.h>      // for "bool","_Bool"
+#include <stdlib.h>       // for "atoi()","strtod()"...
+#include <string.h>       // for "strcmp()","memcpy()"...
+#include <errno.h>        // for "errno","errno_t"-C11
+#include <time.h>         // for "timespec_*"-C11
+#include "lib/_threads.h" // for "mutex_*"-C11
 
 #ifndef _WIN32
   typedef int errno_t;   // C11 (but only MinGW provides it now)
 #endif
 
-_Static_assert( ((errno_t)0)+UCHAR_MAX >= UCHAR_MAX, "errno_t invalid"); // C11
+_Static_assert( sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C11
+_Static_assert( UCHAR_MAX == ((errno_t)0)+UCHAR_MAX, "errno_t invalid"); // C11
 
 // required so that "true/false" get recognized as "bool" by C11's _Generic
 #undef  true
@@ -68,7 +73,8 @@ typedef struct
 {
     size_t length;
 
-    volatile bool locked;
+    unsigned int timeout;
+    mtx_t locked;         // C11
 
     Value* first;
     Value* last;
@@ -157,6 +163,7 @@ Value* _value_create(size_t idx)
     Value* v = (Value *) calloc(1, sizeof(Value));
     v->idx = idx;
     v->next = NULL;
+
     return v;
 }
 
@@ -255,88 +262,93 @@ void _value_dump(Value* v)
     }
 }
 
+bool _list_lock(List* list)
+{
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    ts.tv_nsec += list->timeout * 1000;
+
+    return (mtx_timedlock(&list->locked, &ts) == thrd_success);
+}
+
 errno_t _list_add_value(List* list, Value* val)
 {
-    if (list->locked) {
-        free(val);
-        return errno = EAGAIN;
-    }
-    list->locked = true;
+    if (!_list_lock(list))
+    {   free(val);
+        return errno = EAGAIN; }
 
-    if (val->idx == list->length) {
-       switch (list->last == NULL) {
-         case true:  list->first = val; break;
-         case false: list->last->next = val;
-       }
-       list->last = val;
+    if (val->idx == list->length)
+    { switch (list->last == NULL) {
+        case true:  list->first = val; break;
+        case false: list->last->next = val;
+      }
+      list->last = val;
     } else {
-       Value* c = list->first;
-       for (size_t i = 0; i < val->idx - 1; i++) {
-           c = c->next; }
-       // emplace our value
-       Value* n = c->next;
-       c->next = val;
-       val->next = n;
-       // re-index following ones
-       while (n != NULL) {
-           n->idx++;
-           n = n->next;
-       }
+      Value* c = list->first;
+      for (size_t i = 0; i < val->idx - 1; i++) {
+        c = c->next; }
+      // emplace our value
+      Value* n = c->next;
+      c->next = val;
+      val->next = n;
+      // re-index following ones
+      while (n != NULL) {
+        n->idx++;
+        n = n->next;
+      }
     }
 
     list->length++;
-    list->locked = false;
+    mtx_unlock(&list->locked);
 
     return EXIT_SUCCESS;
 }
 
 errno_t _list_del_value(List* list, size_t idx)
 {
-    if (list->locked) {
+    if (!_list_lock(list)) {
         return errno = EAGAIN; }
-    list->locked = true;
 
     Value* c = list->first;
     for (int i = 0; i < ((int)idx - 1); i++) {
-        c = c->next; }
+      c = c->next; }
     // this is the target
     Value* n = (idx == 0) ? c : c->next;
     if (idx == 0) {
-        list->first = c->next;
+      list->first = c->next;
     } else if (idx == list->length -1) {
-        list->last = c;
-        c->next = NULL;
+      list->last = c;
+      c->next = NULL;
     } else {
-        c->next = n->next;
+      c->next = n->next;
     }
     free(n);
     n = n->next;
     // re-index following ones
     while (n != NULL) {
-       n->idx--;
-       n = n->next;
+      n->idx--;
+      n = n->next;
     }
 
     list->length--;
-    list->locked = false;
+    mtx_unlock(&list->locked);
 
     return EXIT_SUCCESS;
 }
 
 errno_t _list_get_value(List* list, size_t idx, Value** val)
 {
-    if (list->locked) {
-        free(*val);
-        return errno = EAGAIN;
-    }
-    list->locked = true;
+    if (!_list_lock(list))
+    {   free(*val);
+        return errno = EAGAIN; }
 
     Value* c = list->first;
     for (size_t i = 0; i < idx; i++) {
-        c = c->next; }
+      c = c->next; }
+
     memcpy((void*)*val, (void*)c, sizeof(Value));
 
-    list->locked = false;
+    mtx_unlock(&list->locked);
 
     return EXIT_SUCCESS;
 }
@@ -344,9 +356,13 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
 
 // 2.b) PUBLIC FUNCTION IMPLEMENTATIONS
 
-List* list_create()
+List* list_create(unsigned int timeout)
 {
-    return (List *) calloc(1, sizeof(List));
+    List* l = calloc(1, sizeof(List));
+    l->timeout = timeout;
+    mtx_init(&l->locked, mtx_recursive|mtx_timed);
+
+    return l;
 }
 
 errno_t list_add_int(List* l, int v) {
@@ -398,16 +414,15 @@ errno_t list_destroy(List* list)
 {
     if (!list) {
         return errno = EINVAL; }
-    if (list->locked) {
+    if (!_list_lock(list)) {
         return errno = EAGAIN; }
-    list->locked = true;
 
     while (list->length > 0) {
-        Value* c = list->first;
-        Value* n = c->next;
-        free(c);
-        list->first = n;
-        list->length--;
+      Value* c = list->first;
+      Value* n = c->next;
+      free(c);
+      list->first = n;
+      list->length--;
     }
     free(list);
     list = NULL;
@@ -419,30 +434,29 @@ errno_t list_dump(List* list)
 {
     if (!list) {
         return errno = EINVAL; }
-    if (list->locked) {
+    if (!_list_lock(list)) {
         return errno = EAGAIN; }
 
     printf("List length: %zd\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
 
-    list->locked = true;
-
     Value *c = list->first;
     for (size_t i = 0; i < list->length; i++) {
-        {  printf("[%zd]: ", c->idx);
-           switch (c->t) {
-               case T_INTEGER: printf("(INTEGER)\t"); break;
-               case T_BOOLEAN: printf("(BOOLEAN)\t"); break;
-               case T_FLOAT  : printf("(FLOAT)\t");   break;
-               case T_STRING : printf("(STRING)\t");  break;
-           }
-           _value_dump(c);
-           putchar('\n');
+      { 
+        printf("[%zd]: ", c->idx);
+        switch (c->t) {
+          case T_INTEGER: printf("(INTEGER)\t"); break;
+          case T_BOOLEAN: printf("(BOOLEAN)\t"); break;
+          case T_FLOAT  : printf("(FLOAT)\t");   break;
+          case T_STRING : printf("(STRING)\t");  break;
         }
-        c = c->next;
+        _value_dump(c);
+        putchar('\n');
+      }
+      c = c->next;
     }
     putchar('\n');
 
-    list->locked = false;
+    mtx_unlock(&list->locked);
 
     return EXIT_SUCCESS;
 }
@@ -457,7 +471,7 @@ size_t list_length(List* list)
 
 int main (int argc, char *argv[])
 {
-    List* l = list_create();
+    List* l = list_create(0);
     list_dump(l);
 
     list_add(l, 42);
@@ -498,7 +512,7 @@ int main (int argc, char *argv[])
           free_str     : free(str);
         }
       }
-      puts("");
+      putchar('\n');
     }
 
     printf("(Deleting 3rd value now)\n\n");
@@ -514,7 +528,7 @@ int main (int argc, char *argv[])
     }
 
     while (list_length(l) > 0) {
-        list_del_last(l);
+      list_del_last(l);
     }
     list_dump(l);
 

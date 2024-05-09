@@ -42,9 +42,10 @@ int main(int argc, char *argv[])
     char c;
     FILE *f;
 
-    if ((f = fopen("log.txt", "w")) == NULL) {
-        fprintf(stderr, "Could not create file 'log.txt'! Exiting...\n");
-        return EXIT_FAILURE; }
+    if ((f = fopen("log.txt", "w")) == NULL)
+    {   fprintf(stderr, "Could not create file 'log.txt'! Exiting...\n");
+        return EXIT_FAILURE;
+    }
 
 #  ifndef _WIN32
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
