@@ -22,8 +22,12 @@
 #  error "No threads provided on this platform!"
 #endif
 
-#if (__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ >= 31))
-#  include <threads.h>
+#ifdef __unix__
+#  if ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 31))
+#    include "_threads_posix.h"  // older Linux
+#  else
+#    include <threads.h>
+#  endif
 #else
-#  include "_threads_posix.h"
+#  include "_threads_posix.h"    // Win32
 #endif

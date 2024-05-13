@@ -1,5 +1,5 @@
 /*
-* variant_list.c
+* libvariant_list.c [library source]
 * Copyright (C) 2024  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -16,44 +16,40 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Compile with:
- Linux (glibc>=2.31) / Win32 (MinGW>=13.x):  gcc -std=c11 ... -lm
- Linux (older): gcc -std=c11 -pthread -DHAVE_TIMESPEC_GET ... -lm
- Win32 (older): gcc -std=c11 -pthread ... -lm
-*/
-
-#define _GNU_SOURCE       // for "asprintf()"-stdio.h,"M_PI"-math.h
-#include <limits.h>       // for "UCHAR_MAX"
-#include <math.h>         // for "lround()"
-#include <stdio.h>        // for "printf()"...
-#include <stdbool.h>      // for "bool","_Bool"
+#define _GNU_SOURCE       // for "asprintf()"-stdio.h
+#include <stdio.h>        // for "(f)printf()"...
 #include <stdlib.h>       // for "atoi()","strtod()"...
 #include <string.h>       // for "strcmp()","memcpy()"...
-#include <errno.h>        // for "errno","errno_t"-C11
+#include <limits.h>       // for "UCHAR_MAX"
+#include <math.h>         // for "lround()"
 #include <time.h>         // for "timespec_*"-C11
-#include "lib/_threads.h" // for "mutex_*"-C11
+#include "_threads.h"     // for "mutex_*"-C11
 
-#ifndef _WIN32
-  typedef int errno_t;   // C11 (but only MinGW provides it now)
+#include "variant_list.h"
+
+
+// PLUMBERY
+
+#ifdef _WIN32
+#  ifdef STATIC
+#    define PUBLIC
+#  elif SHARED
+#    define PUBLIC  __declspec(dllexport) 
+#  else
+#    define PUBLIC  __declspec(dllimport) 
+#  endif
+#  define PRIVATE
+#else
+#  define PUBLIC  __attribute__ ((visibility ("default")))
+#  define PRIVATE __attribute__ ((visibility ("hidden")))
 #endif
+
 
 _Static_assert( sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C11
 _Static_assert( UCHAR_MAX == ((errno_t)0)+UCHAR_MAX, "errno_t invalid"); // C11
 
-// required so that "true/false" get recognized as "bool" by C11's _Generic
-#undef  true
-#undef  false
-#define true  ((_Bool)+1)
-#define false ((_Bool)+0)
 
-
-// 1) TYPES
-
-#define EUNDEF   200
-#define EINTEGER (EUNDEF + 1)
-#define EBOOLEAN (EUNDEF + 2)
-#define EFLOAT   (EUNDEF + 3)
-#define ESTRING  (EUNDEF + 4)
+// PRIVATE TYPES
 
 typedef enum { T_UNDEF, T_INTEGER, T_BOOLEAN, T_FLOAT, T_STRING } ValueType;
 
@@ -69,7 +65,7 @@ struct Value
     Value* next;
 };
 
-typedef struct
+struct List
 {
     size_t length;
 
@@ -78,61 +74,10 @@ typedef struct
 
     Value* first;
     Value* last;
-}
-List;
+};
 
 
-// 2.a) PUBLIC FUNCTION PROTOTYPES
-
-List* list_create();
-
-errno_t list_add_int(List* list, int i);
-errno_t list_add_bool(List* list, bool b);
-errno_t list_add_float(List* list, double f);
-errno_t list_add_string(List* list, char* s);
-
-errno_t list_insert_int(List* list, size_t idx, int i);
-errno_t list_insert_bool(List* list, size_t idx, bool b);
-errno_t list_insert_float(List* list, size_t idx, double f);
-errno_t list_insert_string(List* list, size_t idx, char* s);
-
-errno_t list_get_int(List* list, size_t idx, int* i);
-errno_t list_get_bool(List* list, size_t idx, bool* b);
-errno_t list_get_float(List* list, size_t idx, double* f);
-errno_t list_get_string(List* list, size_t idx, char** s);
-
-// C11: these generic macros will make our life easier
-
-#define list_add(L, V) _Generic((V), \
-    int:    list_add_int, \
-    bool:   list_add_bool, \
-    double: list_add_float, \
-    char*:  list_add_string)(L, V)
-
-#define list_insert(L, I, V) _Generic((V), \
-    int:    list_insert_int, \
-    bool:   list_insert_bool, \
-    double: list_insert_float, \
-    char*:  list_insert_string)(L, I, V)
-
-#define list_get(L, I, V) _Generic((V), \
-    int*:    list_get_int, \
-    bool*:   list_get_bool, \
-    double*: list_get_float, \
-    char**:  list_get_string)(L, I, V)
-
-errno_t list_del(List* list, size_t idx);
-errno_t list_del_last(List* list);
-errno_t list_del_first(List* list);
-
-errno_t list_destroy(List* list);
-
-errno_t list_dump(List* list);
-
-size_t list_length(List* list);
-
-
-// 3) PRIVATE FUNCTIONS
+// PRIVATE FUNCTIONS
 
 #define LIST_INSERT_CHECK(L, V) list_insert(L, (L != NULL) ? L->length : 0, V)
 
@@ -158,6 +103,7 @@ size_t list_length(List* list);
     return _list_del_value(L, I);
 
 
+PRIVATE
 Value* _value_create(size_t idx)
 {
     Value* v = (Value *) calloc(1, sizeof(Value));
@@ -173,24 +119,28 @@ Value* _value_create(size_t idx)
     double: _value_set_float, \
     char*:  _value_set_string)(V, T)
 
+PRIVATE
 errno_t _value_set_int(Value* v, int i)
 {
     v->t = T_INTEGER;
     v->i = i;         // C11
 }
 
+PRIVATE
 errno_t _value_set_bool(Value* v, bool b)
 {
     v->t = T_BOOLEAN;
     v->b = b;         // C11
 }
 
+PRIVATE
 errno_t _value_set_float(Value* v, double f)
 {
     v->t = T_FLOAT;
     v->f = f;         // C11
 }
 
+PRIVATE
 errno_t _value_set_string(Value* v, char* s)
 {
     v->t = T_STRING;
@@ -203,6 +153,7 @@ errno_t _value_set_string(Value* v, char* s)
     double*: _value_get_float, \
     char**:  _value_get_string)(V, T)
 
+PRIVATE
 errno_t _value_get_int(Value* v, int* i)
 {
     switch (v->t) {
@@ -215,6 +166,7 @@ errno_t _value_get_int(Value* v, int* i)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 errno_t _value_get_bool(Value* v, bool* b)
 {
     switch (v->t) {
@@ -227,6 +179,7 @@ errno_t _value_get_bool(Value* v, bool* b)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 errno_t _value_get_float(Value* v, double* f)
 {
     switch (v->t) {
@@ -239,6 +192,7 @@ errno_t _value_get_float(Value* v, double* f)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 errno_t _value_get_string(Value* v, char** s)
 {
     switch (v->t) {
@@ -251,6 +205,7 @@ errno_t _value_get_string(Value* v, char** s)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 void _value_dump(Value* v)
 {
     switch (v->t) {
@@ -262,6 +217,7 @@ void _value_dump(Value* v)
     }
 }
 
+PRIVATE
 bool _list_lock(List* list)
 {
     struct timespec ts;
@@ -271,6 +227,7 @@ bool _list_lock(List* list)
     return (mtx_timedlock(&list->locked, &ts) == thrd_success);
 }
 
+PRIVATE
 errno_t _list_add_value(List* list, Value* val)
 {
     if (!_list_lock(list))
@@ -304,6 +261,7 @@ errno_t _list_add_value(List* list, Value* val)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 errno_t _list_del_value(List* list, size_t idx)
 {
     if (!_list_lock(list)) {
@@ -336,6 +294,7 @@ errno_t _list_del_value(List* list, size_t idx)
     return EXIT_SUCCESS;
 }
 
+PRIVATE
 errno_t _list_get_value(List* list, size_t idx, Value** val)
 {
     if (!_list_lock(list))
@@ -354,8 +313,9 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
 }
 
 
-// 2.b) PUBLIC FUNCTION IMPLEMENTATIONS
+// PUBLIC FUNCTION IMPLEMENTATIONS
 
+PUBLIC
 List* list_create(unsigned int timeout)
 {
     List* l = calloc(1, sizeof(List));
@@ -365,51 +325,67 @@ List* list_create(unsigned int timeout)
     return l;
 }
 
+PUBLIC
 errno_t list_add_int(List* l, int v) {
     LIST_INSERT_CHECK(l, v); }
 
+PUBLIC
 errno_t list_add_bool(List* l, bool v) {
     LIST_INSERT_CHECK(l, v); }
  
+PUBLIC
 errno_t list_add_float(List* l, double v) {
     LIST_INSERT_CHECK(l, v); }
 
+PUBLIC
 errno_t list_add_string(List* l, char* v) {
     LIST_INSERT_CHECK(l, v); }
 
+PUBLIC
 errno_t list_insert_int(List* list, size_t idx, int i) {
     LIST_INSERT_CHECK_IMPL(list, idx, i); }
 
+PUBLIC
 errno_t list_insert_bool(List* list, size_t idx, bool b) {
     LIST_INSERT_CHECK_IMPL(list, idx, b); }
 
+PUBLIC
 errno_t list_insert_float(List* list, size_t idx, double f) {
     LIST_INSERT_CHECK_IMPL(list, idx, f); }
 
+PUBLIC
 errno_t list_insert_string(List* list, size_t idx, char* s) {
     LIST_INSERT_CHECK_IMPL(list, idx, s); }
 
+PUBLIC
 errno_t list_get_int(List* list, size_t idx, int* i) {
     LIST_GET_CHECK_IMPL(list, idx, i); }
 
+PUBLIC
 errno_t list_get_bool(List* list, size_t idx, bool* b) {
     LIST_GET_CHECK_IMPL(list, idx, b); }
 
+PUBLIC
 errno_t list_get_float(List* list, size_t idx, double* f) {
     LIST_GET_CHECK_IMPL(list, idx, f); }
 
+PUBLIC
 errno_t list_get_string(List* list, size_t idx, char** s) {
     LIST_GET_CHECK_IMPL(list, idx, s); }
 
+PUBLIC
 errno_t list_del(List* list, size_t idx) {
     LIST_DEL_CHECK_IMPL(list, idx); }
 
+PUBLIC
 errno_t list_del_last(List* list) {
     LIST_DEL_CHECK_IMPL(list, list->length-1); }
 
+PUBLIC
 errno_t list_del_first(List* list) {
     LIST_DEL_CHECK_IMPL(list, 0); }
 
+PUBLIC
 errno_t list_destroy(List* list)
 {
     if (!list) {
@@ -431,6 +407,7 @@ errno_t list_destroy(List* list)
     return EXIT_SUCCESS;
 }
 
+PUBLIC
 errno_t list_dump(List* list)
 {
     if (!list) {
@@ -462,82 +439,9 @@ errno_t list_dump(List* list)
     return EXIT_SUCCESS;
 }
 
+PUBLIC
 size_t list_length(List* list)
 {
     return list ? list->length : 0;
 }
 
-
-/* -----------------------------------------------------*/
-
-int main (int argc, char *argv[])
-{
-    List* l = list_create(0);
-    list_dump(l);
-
-    list_add(l, 42);
-    list_dump(l);
-
-    list_add(l, true);
-    list_add(l, M_PI); // 3.14...
-    list_add(l, "Tarnyko does C11");
-    list_dump(l);
-
-    list_insert(l, 1, "Insert this text in 2nd position...");
-    list_insert(l, 3, "...and this one in 4th position.");
-    list_dump(l);
-
-    { int i;
-      list_get(l, 4, &i);
-      printf("(5th element fetched as an Integer: %d)\n\n", i);
-    }
-
-    { char* str;
-      printf("Fetching all elements as Strings :\n");
-      printf("--------------------------------  \n");
-
-      for (int idx = 0; idx < list_length(l); idx++)
-      {
-        errno_t res = list_get(l, idx, &str);
-        printf("Element %d: '%s',", idx, str);
-
-        switch (res)
-        {
-          case EINVAL  : fprintf(stderr, "[ERR.]\n"); continue;
-          case EAGAIN  : fprintf(stderr, "[LOCK]\n"); continue;
-          case EINTEGER: printf(" is an Integer.\n"); goto free_str;
-          case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
-          case EFLOAT  : printf(" is a Float.\n");    goto free_str;
-          default      : printf(" is already a String!\n"); break;
-          // we need to free memory when auto-converting to String
-          free_str     : free(str);
-        }
-      }
-      putchar('\n');
-    }
-
-    printf("(Deleting 3rd value now)\n\n");
-    list_del(l, 2);
-    list_dump(l);
-
-    printf("(Trying to delete value '%zd'...\n", list_length(l)+1);
-    switch (list_del(l, list_length(l)))
-    {
-      case EAGAIN: fprintf(stderr, "...locked by another thread!)\n\n"); break;
-      case EINVAL: fprintf(stderr, "...not found in list!)\n\n"); break;
-      default    : printf("...success.\n");
-    }
-
-    while (list_length(l) > 0) {
-      list_del_last(l);
-    }
-    list_dump(l);
-
-    list_destroy(l);
-
-
-    printf("Press key to continue...\n");
-    getchar();
-
-    return EXIT_SUCCESS;
-}

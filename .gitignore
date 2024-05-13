@@ -4,8 +4,10 @@
 !*.*
 
 # (binaries)
-*.a
 *.o
+*.a
 *.so
+*.so.?
 *.dll
 *.exe
+*.pdb
