@@ -41,10 +41,12 @@ _Static_assert( sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C11
 _Static_assert( UCHAR_MAX == ((errno_t)0)+UCHAR_MAX, "errno_t invalid"); // C11
 
 // required so that "true/false" get recognized as "bool" by C11's _Generic
-#undef  true
-#undef  false
-#define true  ((_Bool)+1)
-#define false ((_Bool)+0)
+#if __STDC_VERSION__ < 202311L
+#  undef  true
+#  undef  false
+#  define true  ((_Bool)+1)
+#  define false ((_Bool)+0)
+#endif
 
 
 // 1) TYPES
@@ -84,7 +86,7 @@ List;
 
 // 2.a) PUBLIC FUNCTION PROTOTYPES
 
-List* list_create();
+List* list_create(unsigned int timeout);
 
 errno_t list_add_int(List* list, int i);
 errno_t list_add_bool(List* list, bool b);
