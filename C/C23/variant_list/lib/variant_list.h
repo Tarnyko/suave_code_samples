@@ -24,25 +24,12 @@
 extern "C" {
 #endif
 
-#include <stdbool.h>      // for "bool","_Bool"
-#include <errno.h>        // for "errno","errno_t"-C11
-
-
-// PLUMBERY
-
+#include <errno.h>       // for "errno","errno_t"-C11,C23
 #ifndef _ERRCODE_DEFINED
-  typedef int errno_t;   // C11 (but only MinGW provides it now)
+  typedef int errno_t;   // C11,C23 (but only MinGW provides it now)
 #else
-#  include <limits.h>
-  _Static_assert( INT_MAX == ((errno_t)0)+INT_MAX, "errno_t invalid"); // C11
-#endif
-
- // required so that "true/false" get recognized as "bool" by C11's _Generic
-#if __STDC_VERSION__ < 202311L
-#  undef  true
-#  undef  false
-#  define true  ((_Bool)+1)
-#  define false ((_Bool)+0)
+# include <limits.h>
+  static_assert(INT_MAX == ((errno_t)0)+INT_MAX, "errno_t invalid"); // C23
 #endif
 
 
@@ -62,7 +49,7 @@ typedef struct List List;
 List* list_create(unsigned int timeout);
 
 errno_t list_add_int(List* list, int i);
-errno_t list_add_bool(List* list, bool b);
+errno_t list_add_bool(List* list, bool b); // C23 ("bool" without "stdbool.h")
 errno_t list_add_float(List* list, double f);
 errno_t list_add_string(List* list, char* s);
 
@@ -76,7 +63,7 @@ errno_t list_get_bool(List* list, size_t idx, bool* b);
 errno_t list_get_float(List* list, size_t idx, double* f);
 errno_t list_get_string(List* list, size_t idx, char** s);
 
-// C11: these generic macros will make our life easier
+// C11,C23: these generic macros will make our life easier
 
 #define list_add(L, V) _Generic((V), \
     int:    list_add_int, \

@@ -18,13 +18,13 @@
 * Boston, MA  02110-1301, USA.
 */
 
-#define _GNU_SOURCE       // for "asprintf()"-stdio.h
-#include <stdio.h>        // for "(f)printf()"...
-#include <stdlib.h>       // for "atoi()","strtod()"...
-#include <string.h>       // for "strcmp()","memcpy()"...
-#include <math.h>         // for "lround()"
-#include <time.h>         // for "timespec_*"-C11
-#include "_threads.h"     // for "mutex_*"-C11
+#define _GNU_SOURCE  // for "asprintf()"-stdio.h
+#include <stdio.h>   // for "(f)printf()"...
+#include <stdlib.h>  // for "atoi()","strtod()"...
+#include <string.h>  // for "strcmp()","memcpy()"...
+#include <math.h>    // for "lround()"
+#include <time.h>    // for "timespec_*"-C11,C23
+#include <threads.h> // for "mutex_*"-C11,C23
 
 #include "variant_list.h"
 
@@ -45,8 +45,6 @@
 #  define PRIVATE __attribute__ ((visibility ("hidden")))
 #endif
 
-_Static_assert( sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C11
-
 
 // PRIVATE TYPES
 
@@ -59,8 +57,8 @@ struct Value
     size_t idx;
 
     ValueType t;
-    union { int i; bool b; double f; char* s; }; /* C11: anonymous, we can do
-                                                    "val->i", "val->b"...  */
+    union { int i; bool b; double f; char* s; }; /* C11,C23: anonymous, do
+                                                    "val->i", "val->b"... */
     Value* next;
 };
 
@@ -69,7 +67,7 @@ struct List
     size_t length;
 
     unsigned int timeout;
-    mtx_t locked;         // C11
+    mtx_t locked;         // C11,C23
 
     Value* first;
     Value* last;
@@ -122,28 +120,28 @@ PRIVATE
 errno_t _value_set_int(Value* v, int i)
 {
     v->t = T_INTEGER;
-    v->i = i;         // C11 (anonymous union)
+    v->i = i;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
 errno_t _value_set_bool(Value* v, bool b)
 {
     v->t = T_BOOLEAN;
-    v->b = b;         // C11 (anonymous union)
+    v->b = b;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
 errno_t _value_set_float(Value* v, double f)
 {
     v->t = T_FLOAT;
-    v->f = f;         // C11 (anonymous union)
+    v->f = f;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
 errno_t _value_set_string(Value* v, char* s)
 {
     v->t = T_STRING;
-    v->s = s;         // C11 (anonymous union)
+    v->s = s;         // C11,C23 (anonymous union)
 }
 
 #define _value_get(V, T) _Generic((T), \

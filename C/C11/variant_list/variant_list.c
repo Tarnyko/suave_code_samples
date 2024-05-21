@@ -23,7 +23,6 @@
 */
 
 #define _GNU_SOURCE       // for "asprintf()"-stdio.h,"M_PI"-math.h
-#include <limits.h>       // for "UCHAR_MAX"
 #include <math.h>         // for "lround()"
 #include <stdio.h>        // for "printf()"...
 #include <stdbool.h>      // for "bool","_Bool"
@@ -33,12 +32,14 @@
 #include <time.h>         // for "timespec_*"-C11
 #include "lib/_threads.h" // for "mutex_*"-C11
 
-#ifndef _WIN32
-  typedef int errno_t;   // C11 (but only MinGW provides it now)
+#ifndef _ERRCODE_DEFINED
+  typedef int errno_t;    // C11 (but only MinGW provides it now)
+#else
+#  include <limits.h>
+  _Static_assert( INT_MAX == ((errno_t)0)+INT_MAX, "errno_t invalid"); // C11
 #endif
 
 _Static_assert( sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C11
-_Static_assert( UCHAR_MAX == ((errno_t)0)+UCHAR_MAX, "errno_t invalid"); // C11
 
 // required so that "true/false" get recognized as "bool" by C11's _Generic
 #if __STDC_VERSION__ < 202311L
@@ -178,25 +179,25 @@ Value* _value_create(size_t idx)
 errno_t _value_set_int(Value* v, int i)
 {
     v->t = T_INTEGER;
-    v->i = i;         // C11
+    v->i = i;         // C11 (anonymous union)
 }
 
 errno_t _value_set_bool(Value* v, bool b)
 {
     v->t = T_BOOLEAN;
-    v->b = b;         // C11
+    v->b = b;         // C11 (anonymous union)
 }
 
 errno_t _value_set_float(Value* v, double f)
 {
     v->t = T_FLOAT;
-    v->f = f;         // C11
+    v->f = f;         // C11 (anonymous union)
 }
 
 errno_t _value_set_string(Value* v, char* s)
 {
     v->t = T_STRING;
-    v->s = s;         // C11
+    v->s = s;         // C11 (anonymous union)
 }
 
 #define _value_get(V, T) _Generic((T), \
@@ -260,7 +261,7 @@ void _value_dump(Value* v)
       case T_BOOLEAN: printf("%s",   v->b ?"true":"false"); break;
       case T_FLOAT  : printf("%.6f", v->f);                 break;
       case T_STRING : printf("%s",   v->s);                 break;
-      default:        fprintf(stderr, "Unknown value type");
+      default       : fprintf(stderr, "Unknown value type");
     }
 }
 
