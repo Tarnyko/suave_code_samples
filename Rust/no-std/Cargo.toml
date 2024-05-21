@@ -1,0 +1,20 @@
+[package]
+name = "no-std"
+version = "0.1.0"
+authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
+edition = "2018"
+description = "A standalone executable with no Standard Library"
+repository = "https://github.com/Tarnyko/suave_code_samples"
+homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/no-std"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# disable default features to avoid calls to "__libc_csu*"/"__libs_start_main"
+libc = { version = "0.2", default-features = false, features = ["extra_traits"] }
+
+# For the "eh_personality" error
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -11,3 +11,7 @@
 *.dll
 *.exe
 *.pdb
+
+# (generated files)
+target/
+Cargo.lock
