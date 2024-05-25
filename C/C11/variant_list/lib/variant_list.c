@@ -55,13 +55,14 @@ int main (int argc, char *argv[])
       for (size_t idx = 0; idx < list_length(l); idx++)
       {
         errno_t res = list_get(l, idx, &str);
-        printf("Element %zd: '%s',", idx, str);
 
+        printf("Element %zd: '%s',", idx, str);
         switch (res)
         {
           case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
           case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
           case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
+
           case EINTEGER: printf(" is an Integer.\n"); goto free_str;
           case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
           case EFLOAT  : printf(" is a Float.\n");    goto free_str;

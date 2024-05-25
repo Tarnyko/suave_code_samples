@@ -28,7 +28,7 @@
 
 int main (int argc, char *argv[])
 {
-    List* l = list_create(0);
+    auto l = list_create(0); // C23
     list_dump(l);
 
     list_add(l, 42);
@@ -36,7 +36,7 @@ int main (int argc, char *argv[])
 
     list_add(l, true);
     list_add(l, M_PI); // 3.14...
-    list_add(l, "Tarnyko does C11");
+    list_add(l, "Tarnyko does C23");
     list_dump(l);
 
     list_insert(l, 1, "Insert this text in 2nd position...");
@@ -52,16 +52,17 @@ int main (int argc, char *argv[])
       printf("Fetching all elements as Strings :\n");
       printf("--------------------------------  \n");
 
-      for (size_t idx = 0; idx < list_length(l); idx++)
+      for (TYPEOF(list_length) idx = 0; idx < list_length(l); idx++)
       {
-        errno_t res = list_get(l, idx, &str);
-        printf("Element %zd: '%s',", idx, str);
+        auto res = list_get(l, idx, &str); // C23
 
+        printf("Element %zd: '%s',", idx, str);
         switch (res)
         {
           case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
           case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
           case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
+
           case EINTEGER: printf(" is an Integer.\n"); goto free_str;
           case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
           case EFLOAT  : printf(" is a Float.\n");    goto free_str;

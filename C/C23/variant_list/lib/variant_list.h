@@ -32,6 +32,11 @@ extern "C" {
   static_assert(INT_MAX == ((errno_t)0)+INT_MAX, "errno_t invalid"); // C23
 #endif
 
+ // convenience macro
+#ifndef TYPEOF
+#  define TYPEOF(F, ...) typeof(F(nullptr, ##__VA_ARGS__)) // C23
+#endif
+
 
 // TYPES
 

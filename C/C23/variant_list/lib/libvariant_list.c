@@ -95,7 +95,7 @@ struct List
     Value* v = _value_create(I);             \
     if (errno = _list_get_value(L, I, &v)) { \
         return errno; }                      \
-    errno_t e = _value_get(v, T); free(v);   \
+    auto e = _value_get(v, T); free(v);      \
     return errno = e;
 
 #define LIST_DEL_CHECK_IMPL(L, I) \
@@ -107,7 +107,7 @@ struct List
 PRIVATE
 Value* _value_create(size_t idx)
 {
-    Value* v = (Value*) calloc(1, sizeof(Value));
+    auto v = (Value*) calloc(1, sizeof(Value)); // C23
     v->idx = idx;
     v->next = nullptr;
 
@@ -256,7 +256,7 @@ errno_t _list_add_value(List* list, Value* val)
       list->last = val;
     } else {
       Value* c = list->first;
-      for (size_t i = 0; i < val->idx - 1; i++) {
+      for (typeof(val->idx) i = 0; i < val->idx - 1; i++) { // C23
         c = c->next; }
       // emplace our value
       Value* n = c->next;
@@ -316,7 +316,7 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
         return errno = EAGAIN; }
 
     Value* c = list->first;
-    for (size_t i = 0; i < idx; i++) {
+    for (typeof(idx) i = 0; i < idx; i++) { // C23
       c = c->next; }
     memcpy((void*)*val, (void*)c, sizeof(Value));
 
@@ -331,7 +331,7 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
 PUBLIC
 List* list_create(unsigned int timeout)
 {
-    List* l = (List*) calloc(1, sizeof(List));
+    auto l = (List*) calloc(1, sizeof(List)); // C23
     l->timeout = timeout;
     mtx_init(&l->locked, mtx_recursive | mtx_timed);
 
@@ -435,7 +435,7 @@ errno_t list_dump(List* list)
     printf("List length: %zd\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
 
     Value *c = list->first;
-    for (size_t i = 0; i < list->length; i++) {
+    for (typeof(list->length) i = 0; i < list->length; i++) { // C23
       { 
         printf("[%zd]: ", c->idx);
         switch (c->t) {

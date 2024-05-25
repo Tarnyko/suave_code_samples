@@ -39,6 +39,9 @@
 static_assert(sizeof(NULL) == sizeof(void(*)()), "NULL non-castable");
 static_assert(sizeof(nullptr) == sizeof(nullptr_t), "nullptr non-castable");
 
+ // C23, convenience macro
+#define TYPEOF(F, ...) typeof(F(nullptr, ##__VA_ARGS__))
+
 
 // 1) TYPES
 
@@ -145,7 +148,7 @@ size_t list_length(List* list);
     Value* v = _value_create(I);             \
     if (errno = _list_get_value(L, I, &v)) { \
         return errno; }                      \
-    errno_t e = _value_get(v, T); free(v);   \
+    auto e = _value_get(v, T); free(v);      \
     return errno = e;
 
 #define LIST_DEL_CHECK_IMPL(L, I) \
@@ -156,7 +159,7 @@ size_t list_length(List* list);
 
 Value* _value_create(size_t idx)
 {
-    Value* v = (Value*) calloc(1, sizeof(Value));
+    auto v = (Value*) calloc(1, sizeof(Value)); // C23
     v->idx = idx;
     v->next = nullptr;
 
@@ -293,7 +296,7 @@ errno_t _list_add_value(List* list, Value* val)
       list->last = val;
     } else {
       Value* c = list->first;
-      for (size_t i = 0; i < val->idx - 1; i++) {
+      for (typeof(val->idx) i = 0; i < val->idx - 1; i++) { // C23
         c = c->next; }
       // emplace our value
       Value* n = c->next;
@@ -351,7 +354,7 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
         return errno = EAGAIN; }
 
     Value* c = list->first;
-    for (size_t i = 0; i < idx; i++) {
+    for (typeof(idx) i = 0; i < idx; i++) { // C23
       c = c->next; }
     memcpy((void*)*val, (void*)c, sizeof(Value));
 
@@ -365,7 +368,7 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
 
 List* list_create(unsigned int timeout)
 {
-    List* l = (List*) calloc(1, sizeof(List));
+    auto l = (List*) calloc(1, sizeof(List)); // C23
     l->timeout = timeout;
     mtx_init(&l->locked, mtx_recursive | mtx_timed);
 
@@ -451,7 +454,7 @@ errno_t list_dump(List* list)
     printf("List length: %zd\n-----------\n%s", list->length, (list->length == 0)?"<empty>\n":"");
 
     Value *c = list->first;
-    for (size_t i = 0; i < list->length; i++) {
+    for (typeof(list->length) i = 0; i < list->length; i++) { // C23
       { 
         printf("[%zd]: ", c->idx);
         switch (c->t) {
@@ -482,7 +485,7 @@ size_t list_length(List* list)
 
 int main (int argc, char *argv[])
 {
-    List* l = list_create(0);
+    auto l = list_create(0); // C23
     list_dump(l);
 
     list_add(l, 42);
@@ -506,16 +509,17 @@ int main (int argc, char *argv[])
       printf("Fetching all elements as Strings :\n");
       printf("--------------------------------  \n");
 
-      for (size_t idx = 0; idx < list_length(l); idx++)
+      for (TYPEOF(list_length) idx = 0; idx < list_length(l); idx++)
       {
-        errno_t res = list_get(l, idx, &str);
-        printf("Element %zd: '%s',", idx, str);
+        auto res = list_get(l, idx, &str); // C23
 
+        printf("Element %zd: '%s',", idx, str);
         switch (res)
         {
           case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
           case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
           case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
+
           case EINTEGER: printf(" is an Integer.\n"); goto free_str;
           case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
           case EFLOAT  : printf(" is a Float.\n");    goto free_str;
