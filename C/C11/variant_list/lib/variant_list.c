@@ -52,19 +52,20 @@ int main (int argc, char *argv[])
       printf("Fetching all elements as Strings :\n");
       printf("--------------------------------  \n");
 
-      for (int idx = 0; idx < list_length(l); idx++)
+      for (size_t idx = 0; idx < list_length(l); idx++)
       {
         errno_t res = list_get(l, idx, &str);
-        printf("Element %d: '%s',", idx, str);
+        printf("Element %zd: '%s',", idx, str);
 
         switch (res)
         {
-          case EINVAL  : fprintf(stderr, "[ERR.]\n"); continue;
-          case EAGAIN  : fprintf(stderr, "[LOCK]\n"); continue;
+          case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
+          case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
+          case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
           case EINTEGER: printf(" is an Integer.\n"); goto free_str;
           case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
           case EFLOAT  : printf(" is a Float.\n");    goto free_str;
-          default      : printf(" is already a String!\n"); break;
+          case EXIT_SUCCESS: printf(" is already a String!\n"); continue;
           // we need to free memory when auto-converting to String
           free_str     : free(str);
         }

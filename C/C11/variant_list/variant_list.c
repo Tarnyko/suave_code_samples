@@ -163,7 +163,7 @@ size_t list_length(List* list);
 
 Value* _value_create(size_t idx)
 {
-    Value* v = (Value *) calloc(1, sizeof(Value));
+    Value* v = (Value*) calloc(1, sizeof(Value));
     v->idx = idx;
     v->next = NULL;
 
@@ -213,7 +213,7 @@ errno_t _value_get_int(Value* v, int* i)
       case T_BOOLEAN: *i = v->b;              return EBOOLEAN;
       case T_FLOAT  : *i = (int)lround(v->f); return EFLOAT;
       case T_STRING : *i = atoi(v->s);        return ESTRING;
-      default       :                         return EINVAL;
+      default       :                         return EUNDEF;
     }
     return EXIT_SUCCESS;
 }
@@ -225,7 +225,7 @@ errno_t _value_get_bool(Value* v, bool* b)
       case T_BOOLEAN: *b = v->b;                 break;
       case T_FLOAT  : *b = (int)v->f?true:false; return EFLOAT;
       case T_STRING : *b = !strcmp(v->s,"true"); return ESTRING;
-      default       :                            return EINVAL;
+      default       :                            return EUNDEF;
     }
     return EXIT_SUCCESS;
 }
@@ -237,7 +237,7 @@ errno_t _value_get_float(Value* v, double* f)
       case T_BOOLEAN: *f = v->b;               return EBOOLEAN;
       case T_FLOAT  : *f = v->f;               break;
       case T_STRING : *f = strtod(v->s, NULL); return ESTRING;
-      default       :                          return EINVAL;
+      default       :                          return EUNDEF;
     }
     return EXIT_SUCCESS;
 }
@@ -249,7 +249,7 @@ errno_t _value_get_string(Value* v, char** s)
       case T_BOOLEAN: asprintf(s,"%s",v->b?"true":"false"); return EBOOLEAN;
       case T_FLOAT  : asprintf(s,"%.6f",v->f); return EFLOAT;
       case T_STRING : *s = v->s;               break;
-      default       :                          return EINVAL;
+      default       :                          return EUNDEF;
     }
     return EXIT_SUCCESS;
 }
@@ -348,7 +348,6 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
     Value* c = list->first;
     for (size_t i = 0; i < idx; i++) {
       c = c->next; }
-
     memcpy((void*)*val, (void*)c, sizeof(Value));
 
     mtx_unlock(&list->locked);
@@ -361,9 +360,9 @@ errno_t _list_get_value(List* list, size_t idx, Value** val)
 
 List* list_create(unsigned int timeout)
 {
-    List* l = calloc(1, sizeof(List));
+    List* l = (List*) calloc(1, sizeof(List));
     l->timeout = timeout;
-    mtx_init(&l->locked, mtx_recursive|mtx_timed);
+    mtx_init(&l->locked, mtx_recursive | mtx_timed);
 
     return l;
 }
@@ -499,19 +498,20 @@ int main (int argc, char *argv[])
       printf("Fetching all elements as Strings :\n");
       printf("--------------------------------  \n");
 
-      for (int idx = 0; idx < list_length(l); idx++)
+      for (size_t idx = 0; idx < list_length(l); idx++)
       {
         errno_t res = list_get(l, idx, &str);
-        printf("Element %d: '%s',", idx, str);
+        printf("Element %zd: '%s',", idx, str);
 
         switch (res)
         {
-          case EINVAL  : fprintf(stderr, "[ERR.]\n"); continue;
-          case EAGAIN  : fprintf(stderr, "[LOCK]\n"); continue;
+          case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
+          case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
+          case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
           case EINTEGER: printf(" is an Integer.\n"); goto free_str;
           case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
           case EFLOAT  : printf(" is a Float.\n");    goto free_str;
-          default      : printf(" is already a String!\n"); break;
+          case EXIT_SUCCESS: printf(" is already a String!\n"); continue;
           // we need to free memory when auto-converting to String
           free_str     : free(str);
         }
