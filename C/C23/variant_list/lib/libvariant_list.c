@@ -150,7 +150,8 @@ errno_t _value_set_string(Value* v, char* s)
     int*:    _value_get_int, \
     bool*:   _value_get_bool, \
     double*: _value_get_float, \
-    char**:  _value_get_string)(V, T)
+    char**:  _value_get_string, \
+    void*:   _value_get_Type)(V, T)
 
 PRIVATE
 errno_t _value_get_int(Value* v, int* i)
@@ -202,6 +203,18 @@ errno_t _value_get_string(Value* v, char** s)
       default       :                          return EUNDEF;
     }
     return EXIT_SUCCESS;
+}
+
+PRIVATE
+errno_t _value_get_Type(Value* v, void*)
+{
+    switch (v->t) {
+      case T_INTEGER: return EINTEGER;
+      case T_BOOLEAN: return EBOOLEAN;
+      case T_FLOAT  : return EFLOAT;
+      case T_STRING : return ESTRING;
+      default       : return EUNDEF;
+    }
 }
 
 PRIVATE
@@ -370,6 +383,10 @@ errno_t list_get_float(List* list, size_t idx, double* f) {
 PUBLIC
 errno_t list_get_string(List* list, size_t idx, char** s) {
     LIST_GET_CHECK_IMPL(list, idx, s); }
+
+PUBLIC
+errno_t list_get_Type(List* list, size_t idx, void* n) {
+    LIST_GET_CHECK_IMPL(list, idx, n); }
 
 PUBLIC
 errno_t list_del(List* list, size_t idx) {

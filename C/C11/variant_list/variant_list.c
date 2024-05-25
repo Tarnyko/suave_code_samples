@@ -103,6 +103,7 @@ errno_t list_get_int(List* list, size_t idx, int* i);
 errno_t list_get_bool(List* list, size_t idx, bool* b);
 errno_t list_get_float(List* list, size_t idx, double* f);
 errno_t list_get_string(List* list, size_t idx, char** s);
+errno_t list_get_Type(List* list, size_t idx, void* n);
 
 // C11: these generic macros will make our life easier
 
@@ -122,7 +123,8 @@ errno_t list_get_string(List* list, size_t idx, char** s);
     int*:    list_get_int, \
     bool*:   list_get_bool, \
     double*: list_get_float, \
-    char**:  list_get_string)(L, I, V)
+    char**:  list_get_string, \
+    void*:   list_get_Type)(L, I, V)
 
 errno_t list_del(List* list, size_t idx);
 errno_t list_del_last(List* list);
@@ -204,7 +206,8 @@ errno_t _value_set_string(Value* v, char* s)
     int*:    _value_get_int, \
     bool*:   _value_get_bool, \
     double*: _value_get_float, \
-    char**:  _value_get_string)(V, T)
+    char**:  _value_get_string, \
+    void*:   _value_get_Type)(V, T)
 
 errno_t _value_get_int(Value* v, int* i)
 {
@@ -252,6 +255,17 @@ errno_t _value_get_string(Value* v, char** s)
       default       :                          return EUNDEF;
     }
     return EXIT_SUCCESS;
+}
+
+errno_t _value_get_Type(Value* v, void*)
+{
+    switch (v->t) {
+      case T_INTEGER: return EINTEGER;
+      case T_BOOLEAN: return EBOOLEAN;
+      case T_FLOAT  : return EFLOAT;
+      case T_STRING : return ESTRING;
+      default       : return EUNDEF;
+    }
 }
 
 void _value_dump(Value* v)
@@ -402,6 +416,9 @@ errno_t list_get_float(List* list, size_t idx, double* f) {
 
 errno_t list_get_string(List* list, size_t idx, char** s) {
     LIST_GET_CHECK_IMPL(list, idx, s); }
+
+errno_t list_get_Type(List* list, size_t idx, void* n) {
+    LIST_GET_CHECK_IMPL(list, idx, n); }
 
 errno_t list_del(List* list, size_t idx) {
     LIST_DEL_CHECK_IMPL(list, idx); }

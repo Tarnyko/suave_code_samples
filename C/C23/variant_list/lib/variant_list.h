@@ -62,6 +62,7 @@ errno_t list_get_int(List* list, size_t idx, int* i);
 errno_t list_get_bool(List* list, size_t idx, bool* b);
 errno_t list_get_float(List* list, size_t idx, double* f);
 errno_t list_get_string(List* list, size_t idx, char** s);
+errno_t list_get_Type(List* list, size_t idx, void* n);
 
 // C11,C23: these generic macros will make our life easier
 
@@ -81,7 +82,8 @@ errno_t list_get_string(List* list, size_t idx, char** s);
     int*:    list_get_int, \
     bool*:   list_get_bool, \
     double*: list_get_float, \
-    char**:  list_get_string)(L, I, V)
+    char**:  list_get_string, \
+    void*:   list_get_Type)(L, I, V)
 
 errno_t list_del(List* list, size_t idx);
 errno_t list_del_last(List* list);
