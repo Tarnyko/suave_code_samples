@@ -79,11 +79,12 @@ errno_t list_get_Type(List* list, size_t idx, void* n);
     char*:  list_insert_string)(L, I, V)
 
 #define list_get(L, I, V) _Generic((V), \
-    int*:    list_get_int, \
-    bool*:   list_get_bool, \
-    double*: list_get_float, \
-    char**:  list_get_string, \
-    void*:   list_get_Type)(L, I, V)
+    int*:      list_get_int, \
+    bool*:     list_get_bool, \
+    double*:   list_get_float, \
+    char**:    list_get_string, \
+    void*:     list_get_Type, \
+    nullptr_t: list_get_Type)(L, I, V)  // C23
 
 errno_t list_del(List* list, size_t idx);
 errno_t list_del_last(List* list);

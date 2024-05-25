@@ -35,7 +35,9 @@
   static_assert(INT_MAX == ((errno_t)0+INT_MAX), "errno_t invalid"); // C23
 #endif
 
-static_assert(sizeof(NULL) == sizeof(void(*)()), "NULL non-castable"); // C23
+ // C23
+static_assert(sizeof(NULL) == sizeof(void(*)()), "NULL non-castable");
+static_assert(sizeof(nullptr) == sizeof(nullptr_t), "nullptr non-castable");
 
 
 // 1) TYPES
@@ -108,11 +110,12 @@ errno_t list_get_Type(List* list, size_t idx, void* n);
     char*:  list_insert_string)(L, I, V)
 
 #define list_get(L, I, V) _Generic((V), \
-    int*:    list_get_int, \
-    bool*:   list_get_bool, \
-    double*: list_get_float, \
-    char**:  list_get_string, \
-    void*:   list_get_Type)(L, I, V)
+    int*:      list_get_int, \
+    bool*:     list_get_bool, \
+    double*:   list_get_float, \
+    char**:    list_get_string, \
+    void*:     list_get_Type, \
+    nullptr_t: list_get_Type)(L, I, V)  // C23
 
 errno_t list_del(List* list, size_t idx);
 errno_t list_del_last(List* list);
@@ -127,7 +130,7 @@ size_t list_length(List* list);
 
 // 3) PRIVATE FUNCTIONS
 
-#define LIST_INSERT_CHECK(L, V) list_insert(L, (L != NULL) ? L->length : 0, V)
+#define LIST_INSERT_CHECK(L, V) list_insert(L, (L != nullptr) ? L->length : 0, V)
 
 #define LIST_INSERT_CHECK_IMPL(L, I, T) \
     if (!L || L->length < I) {          \
@@ -155,7 +158,7 @@ Value* _value_create(size_t idx)
 {
     Value* v = (Value*) calloc(1, sizeof(Value));
     v->idx = idx;
-    v->next = NULL;
+    v->next = nullptr;
 
     return v;
 }
@@ -224,11 +227,11 @@ errno_t _value_get_bool(Value* v, bool* b)
 errno_t _value_get_float(Value* v, double* f)
 {
     switch (v->t) {
-      case T_INTEGER: *f = v->i;               return EINTEGER;
-      case T_BOOLEAN: *f = v->b;               return EBOOLEAN;
-      case T_FLOAT  : *f = v->f;               break;
-      case T_STRING : *f = strtod(v->s, NULL); return ESTRING;
-      default       :                          return EUNDEF;
+      case T_INTEGER: *f = v->i;                  return EINTEGER;
+      case T_BOOLEAN: *f = v->b;                  return EBOOLEAN;
+      case T_FLOAT  : *f = v->f;                  break;
+      case T_STRING : *f = strtod(v->s, nullptr); return ESTRING;
+      default       :                             return EUNDEF;
     }
     return EXIT_SUCCESS;
 }
@@ -283,7 +286,7 @@ errno_t _list_add_value(List* list, Value* val)
         return errno = EAGAIN; }
 
     if (val->idx == list->length)
-    { switch (list->last == NULL) {
+    { switch (list->last == nullptr) {
         case true:  list->first = val; break;
         case false: list->last->next = val;
       }
@@ -297,7 +300,7 @@ errno_t _list_add_value(List* list, Value* val)
       c->next = val;
       val->next = n;
       // re-index following ones
-      while (n != NULL) {
+      while (n != nullptr) {
         n->idx++;
         n = n->next;
       }
@@ -323,14 +326,14 @@ errno_t _list_del_value(List* list, size_t idx)
       list->first = c->next;
     } else if (idx == list->length -1) {
       list->last = c;
-      c->next = NULL;
+      c->next = nullptr;
     } else {
       c->next = n->next;
     }
     free(n);
     n = n->next;
     // re-index following ones
-    while (n != NULL) {
+    while (n != nullptr) {
       n->idx--;
       n = n->next;
     }
@@ -433,7 +436,7 @@ errno_t list_destroy(List* list)
     }
     mtx_destroy(&list->locked);
     free(list);
-    list = NULL;
+    list = nullptr;
 
     return EXIT_SUCCESS;
 }
