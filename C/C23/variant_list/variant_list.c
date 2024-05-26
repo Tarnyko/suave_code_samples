@@ -40,7 +40,7 @@ static_assert(sizeof(NULL) == sizeof(void(*)()), "NULL non-castable");
 static_assert(sizeof(nullptr) == sizeof(nullptr_t), "nullptr non-castable");
 
  // C23, convenience macro
-#define TYPEOF(F, ...) typeof(F(nullptr, ##__VA_ARGS__))
+#define TYPEOF(F, ...) typeof(F(nullptr __VA_OPT__(,) __VA_ARGS__)) // C23
 
 
 // 1) TYPES

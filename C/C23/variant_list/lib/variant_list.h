@@ -34,7 +34,7 @@ extern "C" {
 
  // convenience macro
 #ifndef TYPEOF
-#  define TYPEOF(F, ...) typeof(F(nullptr, ##__VA_ARGS__)) // C23
+#  define TYPEOF(F, ...) typeof(F(nullptr __VA_OPT__(,) __VA_ARGS__)) // C23
 #endif
 
 
