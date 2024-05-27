@@ -333,12 +333,12 @@ errno_t _list_del_value(List* list, size_t idx)
     } else {
       c->next = n->next;
     }
+    c = n->next;
     free(n);
-    n = n->next;
     // re-index following ones
-    while (n != nullptr) {
-      n->idx--;
-      n = n->next;
+    while (c != nullptr) {
+      c->idx--;
+      c = c->next;
     }
 
     list->length--;
@@ -462,6 +462,7 @@ errno_t list_dump(List* list)
           case T_BOOLEAN: printf("(BOOLEAN)\t"); break;
           case T_FLOAT  : printf("(FLOAT)\t");   break;
           case T_STRING : printf("(STRING)\t");  break;
+          default: fprintf(stderr, "(ERR: Undefined)\t");
         }
         _value_dump(c);
         putchar('\n');

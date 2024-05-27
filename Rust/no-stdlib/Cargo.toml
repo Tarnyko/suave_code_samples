@@ -1,11 +1,11 @@
 [package]
-name = "no-std"
+name = "no-stdlib"
 version = "0.1.0"
 authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
 edition = "2018"
 description = "A standalone executable with no Standard Library"
 repository = "https://github.com/Tarnyko/suave_code_samples"
-homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/no-std"
+homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/no-stdlib"
 license = "GPL-3.0-or-later"
 
 [dependencies]
