@@ -13,7 +13,7 @@ fi
 echo "Make-ing UNIX files"
 echo "-------------------"
 
-${CC} -std=c11 -fPIC ${CPPFLAGS} ${CFLAGS} -c -o lib$NAME.o lib$NAME.c
+${CC} -std=c11 -Wall -fPIC ${CPPFLAGS} ${CFLAGS} -c -o lib$NAME.o lib$NAME.c
 
 
 echo "Make-ing static library..."
@@ -25,10 +25,10 @@ ln -sf lib$NAME.so.0 lib$NAME.so
 
 
 echo "Make-ing static executable..."
-${CC} -std=c11 -static -o $NAME-static $NAME.c -L. -l$NAME -lm ${LDFLAGS}
+${CC} -std=c11 -Wall -static -o $NAME-static $NAME.c -L. -l$NAME -lm ${LDFLAGS}
 
 echo "Make-ing shared executable..."
-${CC} -std=c11 -o $NAME-shared $NAME.c -L. -l$NAME
+${CC} -std=c11 -Wall -o $NAME-shared $NAME.c -L. -l$NAME
 
 
 echo "Cleaning intermediate files..."

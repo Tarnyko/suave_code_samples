@@ -17,7 +17,7 @@
 */
 
 //  Compile with:
-// gcc -std=c23 ... -lm
+// gcc -std=c23 -Wall ... -lm
 
 #define _GNU_SOURCE  // for "asprintf()"-stdio.h,"M_PI"-math.h
 #include <math.h>    // for "lround()"
@@ -27,6 +27,10 @@
 #include <errno.h>   // for "errno","errno_t"-C11,C23
 #include <time.h>    // for "timespec_*"-C11,C23
 #include <threads.h> // for "mutex_*"-C11,C23
+
+#if !__has_c_attribute(fallthrough)
+#  warning "No [fallthrough] support, compile with '-Wno-implicit-fallthrough'"
+#endif
 
 #ifndef _ERRCODE_DEFINED
   typedef int errno_t;   // C11,C23 (but only MinGW provides it now)
@@ -172,25 +176,25 @@ Value* _value_create(size_t idx)
     double: _value_set_float, \
     char*:  _value_set_string)(V, T)
 
-errno_t _value_set_int(Value* v, int i)
+void _value_set_int(Value* v, int i)
 {
     v->t = T_INTEGER;
     v->i = i;         // C11,C23 (anonymous union)
 }
 
-errno_t _value_set_bool(Value* v, bool b)
+void _value_set_bool(Value* v, bool b)
 {
     v->t = T_BOOLEAN;
     v->b = b;         // C11,C23 (anonymous union)
 }
 
-errno_t _value_set_float(Value* v, double f)
+void _value_set_float(Value* v, double f)
 {
     v->t = T_FLOAT;
     v->f = f;         // C11,C23 (anonymous union)
 }
 
-errno_t _value_set_string(Value* v, char* s)
+void _value_set_string(Value* v, char* s)
 {
     v->t = T_STRING;
     v->s = s;         // C11,C23 (anonymous union)
@@ -275,7 +279,7 @@ void _value_dump(Value* v)
 
 bool _list_lock(List* list)
 {
-    struct timespec ts;
+    struct timespec ts;                 // C11,C23
     timespec_get(&ts, TIME_UTC);
     ts.tv_nsec += list->timeout * 1000;
 
@@ -376,16 +380,16 @@ List* list_create(unsigned int timeout)
 }
 
 errno_t list_add_int(List* l, int v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 errno_t list_add_bool(List* l, bool v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
  
 errno_t list_add_float(List* l, double v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 errno_t list_add_string(List* l, char* v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 errno_t list_insert_int(List* list, size_t idx, int i) {
     LIST_INSERT_CHECK_IMPL(list, idx, i); }
@@ -513,30 +517,33 @@ int main (int argc, char *argv[])
       for (TYPEOF(list_length) idx = 0; idx < list_length(l); idx++)
       {
         auto res = list_get(l, idx, &str); // C23
+        char* err = nullptr;
 
-        printf("Element %zd: '%s',", idx, str);
+        printf("Element %zd: ", idx);
         switch (res)
         {
-          case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
-          case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
-          case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
+          case EINVAL:  if (!err) err="Invalid index"; [[fallthrough]]; // C23
+          case EAGAIN:  if (!err) err="List locked";   [[fallthrough]]; // C23
+          case EUNDEF:  if (!err) err="Undefined value";
+            fprintf(stderr, "[ERR: %s]\n", err);
+            continue;
 
-          case EINTEGER: printf(" is an Integer.\n"); goto free_str;
-          case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
-          case EFLOAT  : printf(" is a Float.\n");    goto free_str;
-          case EXIT_SUCCESS: printf(" is already a String!\n"); continue;
-          // we need to free memory when auto-converting to String
-          free_str     : free(str);
+          case EINTEGER:  printf("(INTEGER"); goto print_free;
+          case EBOOLEAN:  printf("(BOOLEAN"); goto print_free;
+          case EFLOAT  :  printf("(FLOAT");   goto print_free;
+          case EXIT_SUCCESS:  printf("(STRING)\t\t '%s'\n", str); continue;
+          print_free:  printf(",converted)\t '%s'\n", str);
+                       free(str); // need to free the auto-converted string
         }
       }
       putchar('\n');
     }
 
-    printf("(Deleting 3rd value now)\n\n");
+    printf("(Deleting 3rd element now)\n\n");
     list_del(l, 2);
     list_dump(l);
 
-    printf("(Trying to delete value '%zd'...\n", list_length(l)+1);
+    printf("(Trying to delete %zdth element...\n", list_length(l)+1);
     switch (list_del(l, list_length(l)))
     {
       case EAGAIN: fprintf(stderr, "...locked by another thread!)\n\n"); break;

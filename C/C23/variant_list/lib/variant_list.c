@@ -26,6 +26,11 @@
 #include "variant_list.h"
 
 
+#if !__has_c_attribute(fallthrough) // C23
+#  warning "No [fallthrough] support, compile with '-Wno-implicit-fallthrough'"
+#endif
+
+
 int main (int argc, char *argv[])
 {
     auto l = list_create(0); // C23
@@ -55,30 +60,33 @@ int main (int argc, char *argv[])
       for (TYPEOF(list_length) idx = 0; idx < list_length(l); idx++)
       {
         auto res = list_get(l, idx, &str); // C23
+        char* err = nullptr;
 
-        printf("Element %zd: '%s',", idx, str);
+        printf("Element %zd: ", idx);
         switch (res)
         {
-          case EINVAL  : fprintf(stderr, "[BADIDX]\n"); continue;
-          case EAGAIN  : fprintf(stderr, "[LOCKED]\n"); continue;
-          case EUNDEF  : fprintf(stderr, "[UNDEF]\n");  continue;
+          case EINVAL:  if (!err) err="Invalid index"; [[fallthrough]]; // C23
+          case EAGAIN:  if (!err) err="List locked";   [[fallthrough]]; // C23
+          case EUNDEF:  if (!err) err="Undefined value";
+            fprintf(stderr, "[ERR: %s]\n", err);
+            continue;
 
-          case EINTEGER: printf(" is an Integer.\n"); goto free_str;
-          case EBOOLEAN: printf(" is a Boolean.\n");  goto free_str;
-          case EFLOAT  : printf(" is a Float.\n");    goto free_str;
-          case EXIT_SUCCESS: printf(" is already a String!\n"); continue;
-          // we need to free memory when auto-converting to String
-          free_str     : free(str);
+          case EINTEGER:  printf("(INTEGER"); goto print_free;
+          case EBOOLEAN:  printf("(BOOLEAN"); goto print_free;
+          case EFLOAT:    printf("(FLOAT");   goto print_free;
+          case EXIT_SUCCESS:  printf("(STRING)\t\t '%s'\n", str); continue;
+          print_free:  printf(",converted)\t '%s'\n", str);
+                       free(str); // need to free the auto-converted string
         }
       }
       putchar('\n');
     }
 
-    printf("(Deleting 3rd value now)\n\n");
+    printf("(Deleting 3rd element now)\n\n");
     list_del(l, 2);
     list_dump(l);
 
-    printf("(Trying to delete value '%zd'...\n", list_length(l)+1);
+    printf("(Trying to delete %zdth element...\n", list_length(l)+1);
     switch (list_del(l, list_length(l)))
     {
       case EAGAIN: fprintf(stderr, "...locked by another thread!)\n\n"); break;

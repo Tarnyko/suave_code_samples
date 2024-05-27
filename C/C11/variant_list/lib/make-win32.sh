@@ -15,18 +15,18 @@ echo "-------------------"
 
 
 echo "Make-ing static library..."
-${CC} -std=c11 -DSTATIC ${CPPFLAGS} ${CFLAGS} -c -o lib$NAME.o lib$NAME.c
+${CC} -std=c11 -Wall -DSTATIC ${CPPFLAGS} ${CFLAGS} -c -o lib$NAME.o lib$NAME.c
 ${AR} -cvq lib$NAME.a lib$NAME.o > /dev/null
 
 echo "Make-ing DLL and import library..."
-${CC} -std=c11 -DSHARED -shared ${CPPFLAGS} ${CFLAGS} -Wl,--out-implib,lib$NAME.dll.a -o lib$NAME.dll lib$NAME.c -lm ${LDFLAGS}
+${CC} -std=c11 -Wall -DSHARED -shared ${CPPFLAGS} ${CFLAGS} -Wl,--out-implib,lib$NAME.dll.a -o lib$NAME.dll lib$NAME.c -lm ${LDFLAGS}
 
 
 echo "Make-ing static executable..."
-${CC} -std=c11 -static ${CPPFLAGS} ${CFLAGS} -o $NAME-static.exe $NAME.c -L. -l$NAME -lm ${LDFLAGS}
+${CC} -std=c11 -Wall -static ${CPPFLAGS} ${CFLAGS} -o $NAME-static.exe $NAME.c -L. -l$NAME -lm ${LDFLAGS}
 
 echo "Make-ing shared executable..."
-${CC} -std=c11 ${CPPFLAGS} ${CFLAGS} -o $NAME-shared.exe $NAME.c -L. -l$NAME
+${CC} -std=c11 -Wall ${CPPFLAGS} ${CFLAGS} -o $NAME-shared.exe $NAME.c -L. -l$NAME
 
 
 echo "Cleaning intermediate files..."

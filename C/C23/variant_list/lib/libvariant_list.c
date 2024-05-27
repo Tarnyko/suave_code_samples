@@ -121,28 +121,28 @@ Value* _value_create(size_t idx)
     char*:  _value_set_string)(V, T)
 
 PRIVATE
-errno_t _value_set_int(Value* v, int i)
+void _value_set_int(Value* v, int i)
 {
     v->t = T_INTEGER;
     v->i = i;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
-errno_t _value_set_bool(Value* v, bool b)
+void _value_set_bool(Value* v, bool b)
 {
     v->t = T_BOOLEAN;
     v->b = b;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
-errno_t _value_set_float(Value* v, double f)
+void _value_set_float(Value* v, double f)
 {
     v->t = T_FLOAT;
     v->f = f;         // C11,C23 (anonymous union)
 }
 
 PRIVATE
-errno_t _value_set_string(Value* v, char* s)
+void _value_set_string(Value* v, char* s)
 {
     v->t = T_STRING;
     v->s = s;         // C11,C23 (anonymous union)
@@ -234,7 +234,7 @@ void _value_dump(Value* v)
 PRIVATE
 bool _list_lock(List* list)
 {
-    struct timespec ts;
+    struct timespec ts;                 // C11,C23
     timespec_get(&ts, TIME_UTC);
     ts.tv_nsec += list->timeout * 1000;
 
@@ -340,19 +340,19 @@ List* list_create(unsigned int timeout)
 
 PUBLIC
 errno_t list_add_int(List* l, int v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 PUBLIC
 errno_t list_add_bool(List* l, bool v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
  
 PUBLIC
 errno_t list_add_float(List* l, double v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 PUBLIC
 errno_t list_add_string(List* l, char* v) {
-    LIST_INSERT_CHECK(l, v); }
+    return LIST_INSERT_CHECK(l, v); }
 
 PUBLIC
 errno_t list_insert_int(List* list, size_t idx, int i) {
