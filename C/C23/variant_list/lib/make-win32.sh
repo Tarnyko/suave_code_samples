@@ -19,7 +19,7 @@ ${CC} -std=c23 -Wall -DSTATIC ${CPPFLAGS} ${CFLAGS} -c -o lib$NAME.o lib$NAME.c
 ${AR} -cvq lib$NAME.a lib$NAME.o > /dev/null
 
 echo "Make-ing DLL and import library..."
-${CC} -std=c23 -Wall --DSHARED -shared ${CPPFLAGS} ${CFLAGS} -Wl,--out-implib,lib$NAME.dll.a -o lib$NAME.dll lib$NAME.c -lm ${LDFLAGS}
+${CC} -std=c23 -Wall -DSHARED -shared ${CPPFLAGS} ${CFLAGS} -Wl,--out-implib,lib$NAME.dll.a -o lib$NAME.dll lib$NAME.c -lm ${LDFLAGS}
 
 
 echo "Make-ing static executable..."

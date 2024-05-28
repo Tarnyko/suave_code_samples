@@ -49,6 +49,7 @@ typedef struct List List;
 
 // PUBLIC FUNCTION PROTOTYPES
 
+[[nodiscard("Leaking unused List")]]       // C23
 List* list_create(unsigned int timeout);
 
 errno_t list_add_int(List* list, int i);
@@ -97,6 +98,7 @@ errno_t list_destroy(List* list);
 
 errno_t list_dump(List* list);
 
+[[nodiscard]]
 size_t list_length(List* list);
 
 

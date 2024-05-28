@@ -39,12 +39,12 @@
   static_assert(INT_MAX == ((errno_t)0+INT_MAX), "errno_t invalid"); // C23
 #endif
 
+ // convenience macro
+#define TYPEOF(F, ...) typeof(F(nullptr __VA_OPT__(,) __VA_ARGS__)) // C23
+
  // C23
 static_assert(sizeof(NULL) == sizeof(void(*)()), "NULL non-castable");
 static_assert(sizeof(nullptr) == sizeof(nullptr_t), "nullptr non-castable");
-
- // C23, convenience macro
-#define TYPEOF(F, ...) typeof(F(nullptr __VA_OPT__(,) __VA_ARGS__)) // C23
 
 
 // 1) TYPES
@@ -84,6 +84,7 @@ List;
 
 // 2.a) PUBLIC FUNCTION PROTOTYPES
 
+[[nodiscard("Leaking unused List")]]       // C23
 List* list_create(unsigned int timeout);
 
 errno_t list_add_int(List* list, int i);
@@ -132,6 +133,7 @@ errno_t list_destroy(List* list);
 
 errno_t list_dump(List* list);
 
+[[nodiscard]]
 size_t list_length(List* list);
 
 

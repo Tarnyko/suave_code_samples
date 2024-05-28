@@ -7,7 +7,7 @@
 #include <string.h> // for "memcmp()"
 
 
-typedef struct {  // put "__attribute__((__packed__))" in between
+typedef struct {    // add "__attribute__((__packed__))" in between
     char c;
     int i;
     double f;
@@ -43,6 +43,8 @@ int main (int argc, char* argv[])
         offsetof(MyStruct, s),
         sizeof(MyStruct));
 
+    // 1) compare zero-initialized structs [GCC: OK]
+
     MyStruct s1 = {0};
     MyStruct s2 = {};  // C23 (always initializes padding to 0)
 
@@ -54,7 +56,7 @@ int main (int argc, char* argv[])
 
     compare_memory(&s1, &s2);
 
-    // above is generally OK... but this is almost never with "-O2"!
+    // 2) compare filled structs with(out) zero-init. [GCC: KO if "-O2"]
 
     MyStruct s3 = { .c = '!', .i = 1, .f = 3.14, .s = "test" };
     MyStruct s4 = {}; s4 = (MyStruct){ .c = '!', .i = 1, .f = 3.14, .s = "test" };
