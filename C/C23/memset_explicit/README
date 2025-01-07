@@ -1,0 +1,9 @@
+Will reliably erase the password even with "-O2/-O3" optimization, under:
+- Windows >= XP
+- macOS >= 10.13 "High Sierra"
+- Linux/Glibc >= 2.25
+- FreeBSD >= 11.x
+- OpenBSD >= 5.5
+- (all other OSes running on x86/ARMv7/ARMv8 architectures)
+
+"memset_explicit.h" courtesy and improved from: https://github.com/gsbabil/memset_explicit
