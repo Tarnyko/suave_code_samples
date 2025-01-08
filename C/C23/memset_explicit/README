@@ -4,6 +4,6 @@ Will reliably erase the password even with "-O2/-O3" optimization, under:
 - Linux/Glibc >= 2.25
 - FreeBSD >= 11.x
 - OpenBSD >= 5.5
-- (all other OSes running on x86/ARMv7/ARMv8 architectures)
+- (all other OSes, with more efficiency on x86/ARMv7/ARMv8 architectures)
 
 "memset_explicit.h" courtesy and improved from: https://github.com/gsbabil/memset_explicit

@@ -6,7 +6,7 @@
  *
  *        Version:  1.0a
  *        Created:  03/19/2015 01:41:49
- *       Revision:  01/07/2025 22:33:00 (Tarnyko)
+ *       Revision:  01/08/2025 18:25:00 (Tarnyko)
  *       Compiler:  gcc
  *
  *         Author:  Babil Golam Sarwar (bgs)
@@ -56,7 +56,7 @@
 
 #else
 
-# error "Unsupported architecture!"
+ static void* (*volatile memset_explicit_unk)(void*, int, size_t) = memset;
 
 #endif
 
@@ -86,8 +86,10 @@ memset_explicit(unsigned char* buf, unsigned char val, size_t buf_len)
      */
         buf = buf + 1;
     }
-# else
+# elif defined(__i386__) || defined(__x86_64__)
     memset_explicit_x86(buf, val, buf_len);
+# else
+    memset_explicit_unk(buf, val, buf_len);
 # endif
 }
 
