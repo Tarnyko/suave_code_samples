@@ -1,6 +1,24 @@
+/*
+* memset_explicit.c
+* Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
+*
+* This program is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 //  Compile with either:
-// gcc -std=c23 -O3 ...
-// gcc -std=c11 -O3 ...
+// gcc -std=c23 -O2 (-DNO_EXPLICIT=1) ...
+// gcc -std=c11 -O2 (-DNO_EXPLICIT=1) ...
 
 #if __STDC_VERSION__ >= 201112L
 #  define __STDC_WANT_LIB_EXT1__ 1
@@ -20,7 +38,13 @@
 #  if defined(_WIN32) && (_WIN32_WINNT >= 0x0501)
 #    warning "Win32's 'SecureZeroMemory()'"
 #    include <windows.h>
-#    define memset_explicit(X,Y,Z) SecureZeroMemory(X,Z)
+#    ifdef  _MSC_VER
+#      define memset_explicit(X,Y,Z) SecureZeroMemory(X,Z)
+#    else
+#      warning "Enforcing non-MSVC implementations"
+       static PVOID (__attribute__((stdcall)) *volatile MGW_Szm)(PVOID, SIZE_T) = SecureZeroMemory;
+#      define memset_explicit(X,Y,Z) MGW_Szm(X,Z)
+#    endif
 #  elif defined(__unix__)
 #    include <sys/param.h>
 #    if (__FreeBSD__ >= 11) || ((__OpenBSD__) && (OpenBSD >= 201405))
@@ -53,7 +77,7 @@ int main (int argc, char* argv[])
     char password[17] = {0};
 
     printf("Please enter your password [max length: 16]: ");
-    scanf("%16s", password);
+    int _ = scanf("%16s", password);
     flush_stdin();
 
     printf("You entered: %s\n", password);
@@ -61,10 +85,12 @@ int main (int argc, char* argv[])
     puts("Your password is still in memory... Inspect it now! (press any key...)");
     getchar();
 
+# ifdef NO_EXPLICIT
+#  warning "We now use the non-explicit version of memset()"
+    memset(password, 0, 16);
+# else
     memset_explicit(password, 0, 16);   // C23
-
-    puts("Password securely deleted from memory... Inspect it now! (press any key...)");
-    getchar();
+# endif
 
     return 0;  
 }

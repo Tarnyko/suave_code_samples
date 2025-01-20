@@ -7,3 +7,23 @@ Will reliably erase the password even with "-O2/-O3" optimization, under:
 - (all other OSes, with more efficiency on x86/ARMv7/ARMv8 architectures)
 
 "memset_explicit.h" courtesy and improved from: https://github.com/gsbabil/memset_explicit
+
+
+Demonstration :
+-------------
+
+ 1) Basic memset(), non-optimized
+    *****************************
+ * Prepare with:   gcc -std=c23 -S -DNO_EXPLICIT=1 memset_explicit.c
+ * Verify with:    grep "call" memset_explicit.s |grep memset   # PRESENT
+
+ 2) Basic memset(), optimized
+    *************************
+ * Prepare with:   gcc -std=c23 -O2 -S -DNO_EXPLICIT=1 memset_explicit.c
+ * Verify with:    grep "call" memset_explicit.s |grep memset   # ABSENT! :-(
+
+ 3) memset_explicit(), optimized
+    ****************************
+ * Compile with:   gcc -std=c23 -O2 memset_explicit.c
+ * Verify with:    grep "call" memset_explicit.s |grep memset   # ABSENT, BUT...
+                   grep "call" memset_explicit.s |grep explicit # ...this is PRESENT :-)
