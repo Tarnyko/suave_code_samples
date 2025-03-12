@@ -1,0 +1,31 @@
+A command-line tool with a plugin system for C code parsing.
+
+
+PREREQUISITES
+-------------
+ (GCC 14.1.0-15.x)
+
+ * Debian/Ubuntu:
+   *************
+   (download from: https://kayari.org/gcc-latest/gcc-latest.deb )
+   $ sudo dpkg -i gcc-latest_*.deb
+
+ * Fedora/RHEL:
+   ***********
+   (download from: https://download.copr.fedorainfracloud.org/results/jwakely/gcc-latest
+    |- it is always the 2nd subfolder of each version/arch)
+   $ sudo rpm -ivh gcc-latest-1*.rpm
+
+ * Windows:
+   *******
+   (download from: https://github.com/skeeto/w64devkit/releases/tag/v1.23.0 )
+
+
+BUILDING
+--------
+  $ make
+   or
+  $ CC=/opt/gcc-latest/bin/gcc make
+
+  DEBUG=1 make
+  make clean
