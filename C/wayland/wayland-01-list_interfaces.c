@@ -115,5 +115,5 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     putchar('\n');
 }
 
-void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t version)
+void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
 { }
