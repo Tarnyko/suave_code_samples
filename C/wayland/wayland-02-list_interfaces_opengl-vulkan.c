@@ -41,7 +41,7 @@
 
 
 typedef enum {
-    E_UNDEF = 0, E_WESTON = 1, E_GNOME = 2, E_KDE = 3
+    E_UNKNOWN = 0, E_WESTON = 1, E_GNOME = 2, E_KDE = 3
 } CompositorId;
 
 typedef struct {
@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
         case E_WESTON: printf("Weston.\n\n");     break;
         case E_GNOME : printf("GNOME.\n\n");      break;
         case E_KDE   : printf("KDE Plasma.\n\n"); break;
-        default      : printf("Undefined...\n\n");
+        default      : printf("Unknown...\n\n");
     }
 
     //now this should have been filled by the rest
