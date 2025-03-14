@@ -20,7 +20,8 @@
 // $ sudo apt install libwayland-dev
 
 //  Compile with:
-// $ gcc .. `pkg-config --cflags --libs wayland-client`
+// - Weston:       $ gcc ... `pkg-config --cflags --libs wayland-client`
+// - Weston/GNOME: $ gcc -DXDG_SHELL ... _deps/*.c `pkg-config --cflags --libs wayland-client`
 
 #define _GNU_SOURCE      // for "asprintf()"
 #include <assert.h>
@@ -36,12 +37,15 @@
 
 // Wayland headers
 #include <wayland-client.h>
+#ifdef XDG_SHELL
+#  include "_deps/xdg-shell-unstable-v6-client-protocol.h"
+#endif
 
 
 // My prototypes
 
 typedef enum {
-    E_UNKNOWN = 0, E_WESTON = 1, E_GNOME = 2, E_KDE = 3
+    E_UNKNOWN = 0, E_WESTON = 1, E_GNOME = 2, E_KDE = 3, E_WLROOTS = 4
 } CompositorId;
 
 typedef enum {
@@ -74,7 +78,9 @@ typedef struct {
     ShellId               shellId;
     void*                 shell;         // 'shell': window manager
     struct wl_shell*      wl_shell;
-    struct xdg_shell*     xdg_shell;
+# ifdef XDG_SHELL
+    struct zxdg_shell_v6* xdg_shell;
+# endif
 
     struct wl_shm*        shm;           // 'shared mem': software renderer
 } InterfaceInfo;
@@ -106,6 +112,29 @@ static const struct wl_shell_surface_listener wl_shell_surface_listener = {
 };
 
 
+#ifdef XDG_SHELL
+void zxdg_shell_v6_handle_ping(void*, struct zxdg_shell_v6*, uint32_t);
+
+static const struct zxdg_shell_v6_listener zxdg_shell_v6_listener = {
+    zxdg_shell_v6_handle_ping
+};
+
+void zxdg_toplevel_v6_configure(void*, struct zxdg_toplevel_v6*,
+		                int32_t, int32_t, struct wl_array*);
+void zxdg_toplevel_v6_close(void*, struct zxdg_toplevel_v6*);
+
+static const struct zxdg_toplevel_v6_listener zxdg_toplevel_v6_listener = {
+    zxdg_toplevel_v6_configure,
+    zxdg_toplevel_v6_close
+};
+
+void zxdg_surface_v6_configure(void*, struct zxdg_surface_v6*, uint32_t);
+
+static const struct zxdg_surface_v6_listener zxdg_surface_v6_listener = {
+    zxdg_surface_v6_configure
+};
+#endif
+
 
 int main(int argc, char* argv[])
 {
@@ -133,10 +162,11 @@ int main(int argc, char* argv[])
     printf("Compositor is: ");
     switch (_info.compositorId)
     {
-        case E_WESTON: printf("Weston.\n\n");     break;
-        case E_GNOME : printf("GNOME.\n\n");      break;
-        case E_KDE   : printf("KDE Plasma.\n\n"); break;
-        default      : printf("Unknown...\n\n");
+        case E_WESTON : printf("Weston.\n\n");     break;
+        case E_GNOME  : printf("GNOME.\n\n");      break;
+        case E_KDE    : printf("KDE Plasma.\n\n"); break;
+        case E_WLROOTS: printf("wlroots.\n\n");    break;
+        default       : printf("Unknown...\n\n");
     }
 
     char* shell_name;
@@ -173,6 +203,10 @@ int main(int argc, char* argv[])
   error:
     result = EXIT_FAILURE;
   end:
+# ifdef XDG_SHELL
+    if (_info.xdg_shell) {
+        zxdg_shell_v6_destroy(_info.xdg_shell); }
+# endif
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
     if (_info.shm) {
@@ -193,6 +227,14 @@ void* elect_shell(InterfaceInfo* _info)
         _info->shellId = E_WL_SHELL;
         _info->shell   = _info->wl_shell;
         return "wl_shell";
+# ifdef XDG_SHELL
+    // available under both Weston and GNOME
+    } else if (_info->xdg_shell) {
+        _info->shellId = E_XDG_SHELL;
+        _info->shell   = _info->xdg_shell;
+	zxdg_shell_v6_add_listener(_info->xdg_shell, &zxdg_shell_v6_listener, NULL);
+        return "zxdg_shell_v6";
+# endif
     }
  
     return NULL;
@@ -206,9 +248,20 @@ void* create_shell_surface(InterfaceInfo* _info, struct wl_surface* surface, cha
        struct wl_shell_surface* shell_surface = wl_shell_get_shell_surface((struct wl_shell*) _info->shell, surface);
        assert(shell_surface);
        wl_shell_surface_add_listener(shell_surface, &wl_shell_surface_listener, NULL);
-       wl_shell_surface_set_title((struct wl_shell_surface*) shell_surface, arg);
-       wl_shell_surface_set_toplevel((struct wl_shell_surface*) shell_surface);
+       wl_shell_surface_set_title(shell_surface, arg);
+       wl_shell_surface_set_toplevel(shell_surface);
        return shell_surface;
+# ifdef XDG_SHELL
+     case E_XDG_SHELL:
+       struct zxdg_surface_v6* xdg_surface = zxdg_shell_v6_get_xdg_surface((struct zxdg_shell_v6*) _info->shell, surface);
+       assert(xdg_surface);
+       zxdg_surface_v6_add_listener(xdg_surface, &zxdg_surface_v6_listener, NULL);
+       struct zxdg_toplevel_v6* xdg_toplevel = zxdg_surface_v6_get_toplevel(xdg_surface);
+       assert(xdg_toplevel);
+       zxdg_toplevel_v6_add_listener(xdg_toplevel, &zxdg_toplevel_v6_listener, NULL);
+       zxdg_toplevel_v6_set_title(xdg_toplevel, arg);
+       return xdg_surface;
+# endif
      default:
        return NULL;
    }
@@ -218,8 +271,10 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
 {
     switch (_info->shellId)
     {
-      case E_WL_SHELL: wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
-                       return;
+      case E_WL_SHELL:  return wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
+# ifdef XDG_SHELL
+      case E_XDG_SHELL: return zxdg_surface_v6_destroy((struct zxdg_surface_v6*) shell_surface);
+# endif
       default:
     }
 }
@@ -239,20 +294,22 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // create a POSIX in-memory object (the name must contain a single '/')
+    // [xdg-shell expects a commit before attaching any buffer (/!\)]
+    wl_surface_commit(window->surface);
+
+    // 1) create a POSIX in-memory object (the name must contain a single '/')
     char* slash = strrchr(title, '/');
     asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
     buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-
     // allocate as much raw bytes as needed pixels inside
     assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
 
-    // 1) expose it as a void* buffer, so our code can use 'memset()' directly
+    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
     buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
                         MAP_SHARED, buffer->shm_fd, 0);
     assert(buffer->data);
 
-    // 2) pass the object to the compositor through its 'wl_shm_pool' interface,
+    // 3) pass the object to the compositor through its 'wl_shm_pool' interface,
     struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
                                                       width * height * 4);
     // and create the final 'wl_buffer' abstraction
@@ -263,7 +320,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     // set the initial raw buffer content, only White pixels (0xFF)
     memset(buffer->data, 0xFF, width * height * 4);
 
-    // attach the 'wl_buffer' to the root 'wl_surface', and set it as damaged
+    // 4) attach the 'wl_buffer' to the root 'wl_surface', and set it as damaged
     wl_surface_attach(window->surface, buffer->buffer, 0, 0);
     wl_surface_damage(window->surface, 0, 0, width, height);
     wl_surface_commit(window->surface);
@@ -297,13 +354,16 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 {
     InterfaceInfo* _info = data;
 
-    if (!strcmp(name, "wl_compositor"))      { _info->compositor = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
-    } else if (!strcmp(name, "wl_shm"))      { _info->shm        = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
-    } else if (!strcmp(name, "wl_shell"))    { _info->wl_shell   = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
-    } else if (strstr(name, "xdg_shell"))    {                                 // TODO
-    } else if (strstr(name, "gtk_shell"))    { _info->compositorId = E_GNOME;  // TODO
-    } else if (strstr(name, "plasma_shell")) { _info->compositorId = E_KDE;    // TODO
-    } else if (strstr(name, "weston"))       { _info->compositorId = E_WESTON; }
+    if (!strcmp(name, "wl_compositor"))         { _info->compositor = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
+    } else if (!strcmp(name, "wl_shm"))         { _info->shm        = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
+    } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell   = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
+# ifdef XDG_SHELL
+    } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell  = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
+# endif
+    } else if (strstr(name, "gtk_shell"))       { _info->compositorId = E_GNOME;
+    } else if (strstr(name, "plasma_shell"))    { _info->compositorId = E_KDE;
+    } else if (strstr(name, "wlr_layer_shell")) { _info->compositorId = E_WLROOTS;
+    } else if (strstr(name, "weston"))          { _info->compositorId = E_WESTON; }
 }
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
@@ -316,3 +376,24 @@ void wl_shell_surface_handle_ping(void* data, struct wl_shell_surface* shell_sur
 {
     wl_shell_surface_pong(shell_surface, serial);
 }
+
+
+#ifdef XDG_SHELL
+void zxdg_shell_v6_handle_ping(void* data, struct zxdg_shell_v6* xdg_shell, uint32_t serial)
+{
+    zxdg_shell_v6_pong(xdg_shell, serial);
+}
+
+void zxdg_toplevel_v6_close(void* data, struct zxdg_toplevel_v6* xdg_toplevel)
+{ }
+
+void zxdg_toplevel_v6_configure(void* data, struct zxdg_toplevel_v6* xdg_toplevel,
+                                int32_t width, int32_t height, struct wl_array* states)
+{ }
+
+void zxdg_surface_v6_configure(void* data, struct zxdg_surface_v6* xdg_surface, uint32_t serial)
+{
+    zxdg_surface_v6_ack_configure(xdg_surface, serial);
+}
+#endif
+

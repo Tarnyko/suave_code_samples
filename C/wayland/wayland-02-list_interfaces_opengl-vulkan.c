@@ -34,7 +34,7 @@
 // EGL (OpenGL, OpenGL ES)
 #include <wayland-egl.h>
 #include <EGL/egl.h>
-#include <GLES/gl.h>
+#include <GLES2/gl2.h>
 
 // Vulkan
 #include <vulkan/vulkan.h>
