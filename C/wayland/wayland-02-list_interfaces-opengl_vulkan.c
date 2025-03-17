@@ -1,5 +1,5 @@
 /*
-* wayland-02-list_interfaces_opengl-vulkan.c
+* wayland-02-list_interfaces-opengl_vulkan.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify

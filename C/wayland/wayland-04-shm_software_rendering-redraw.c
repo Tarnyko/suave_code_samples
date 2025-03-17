@@ -1,5 +1,5 @@
 /*
-* wayland-03-shm_software_rendering.c
+* wayland-04-shm_software_rendering-redraw.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -51,6 +51,8 @@ typedef enum {
 } ShellId;
 
 
+#define BUFFER_COUNT 2                 // double-buffering
+
 typedef struct {
     char*             shm_id;          // UNIX shared memory namespace...
     int               shm_fd;          // ... whose file descriptor is...
@@ -60,11 +62,14 @@ typedef struct {
 } Buffer;
 
 typedef struct {
-    Buffer              buffer;
+    Buffer*             buffers[BUFFER_COUNT];
+    Buffer*             current;
 
     int width;
     int height;
-    struct wl_surface*  surface;         // Wayland surface object...
+
+    struct wl_callback* callback;        // A redraw callback that fires...
+    struct wl_surface*  surface;         // ...on a raw Wayland surface...
     void*               shell_surface;   // ...handled by a window manager
 } Window;
 
@@ -91,6 +96,7 @@ void destroy_shell_surface(InterfaceInfo*, void*);
 
 Window* create_window(InterfaceInfo*, char* title, int width, int height);
 void destroy_window(InterfaceInfo*, Window*);
+void redraw_window(Window*, Buffer*);
 
 
 // Wayland predefined interfaces prototypes
@@ -101,6 +107,13 @@ void wl_interface_removed(void*, struct wl_registry*, uint32_t);
 static const struct wl_registry_listener wl_registry_listener = {
     wl_interface_available,
     wl_interface_removed
+};
+
+
+void wl_callback_needs_redraw(void*, struct wl_callback*, uint32_t);
+
+static const struct wl_callback_listener wl_callback_listener = {
+    wl_callback_needs_redraw
 };
 
 
@@ -319,7 +332,6 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
 Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 {
     Window* window = calloc(1, sizeof(Window));
-    Buffer* buffer = &window->buffer;
 
     window->width = width;
     window->height = height;
@@ -336,48 +348,93 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
     wl_display_roundtrip(_info->display);
 
-    // 1) create a POSIX shared memory object (name must contain a single '/')
-    char* slash = strrchr(title, '/');
-    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
-    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-    // allocate as much raw bytes as needed pixels in the file descriptor
-    assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
+    for (size_t b = 0; b < BUFFER_COUNT; b++)
+    {
+        window->buffers[b] = calloc(1, sizeof(Buffer));
 
-    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
-    buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
-                        MAP_SHARED, buffer->shm_fd, 0);
-    assert(buffer->data);
+        Buffer* buffer = window->buffers[b];
 
-    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
+        // 1) create a POSIX shared memory object (name must contain a single '/')
+        char* slash = strrchr(title, '/');
+        asprintf(&buffer->shm_id, "/%s-%zd", (slash ? slash + 1 : title), b);
+        buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
+        // allocate as much raw bytes as needed pixels in the file descriptor
+        assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
+
+        // 2) expose it as a void* buffer, so our code can use 'memset()' directly
+        buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
+                            MAP_SHARED, buffer->shm_fd, 0);
+        assert(buffer->data);
+
+        // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
+        struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
                                                       width * height * 4);
-    // and create the final 'wl_buffer' abstraction
-    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
-		                               width * 4, WL_SHM_FORMAT_XRGB8888);
-    wl_shm_pool_destroy(shm_pool);
+        // and create the final 'wl_buffer' abstraction
+        buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
+                                                   width * 4, WL_SHM_FORMAT_XRGB8888);
+        wl_shm_pool_destroy(shm_pool);
 
-    // set the initial raw buffer content, only White pixels (0xFF)
-    memset(buffer->data, 0xFF, width * height * 4);
+        // set the initial raw buffer content, only White pixels (0xFF)
+        memset(buffer->data, 0xFF, width * height * 4);
+    }
 
-    // 4) attach our 'wl_buffer' to our 'wl_surface', and commit it
-    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(window->surface, 0, 0, width, height);
-    wl_surface_commit(window->surface);
+    // we do not call 'redraw' from the main loop, because 
+    redraw_window(window, window->buffers[0]);
 
     return window;
 }
 
+void redraw_window(Window* window, Buffer* buffer)
+{
+    const size_t window_bound = (window->width * window->height * 4);
+
+    static size_t pos = 0;
+    static uint8_t motif[] = {0x00,0x00,0x00,0x00,0x42,0x42,0x42,0x42,
+                             0xBB,0xBB,0xBB,0xBB,0xCA,0xCA,0xCA,0xCA};
+
+    pos = pos < (window_bound - sizeof(motif))
+	  ? pos + sizeof(motif)
+	  : window_bound - pos;
+
+    for (size_t m = 0; m < sizeof(motif); m++) {
+        motif[m] += m; }
+
+    memcpy(buffer->data + pos, motif, sizeof(motif));
+
+    // 1) attach our 'wl_buffer' to our 'wl_surface'
+    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
+    wl_surface_damage(window->surface, 0, 0, window->width, window->height);
+
+    // 2) mark the buffer, so the redraw callback can cycle to the next one
+    window->current = buffer;
+
+    // 3) set a redraw callback to be fired by the compositor
+    window->callback = wl_surface_frame(window->surface);
+    wl_callback_add_listener(window->callback, &wl_callback_listener, window);
+
+    // 4) commit our 'wl_surface'!
+    wl_surface_commit(window->surface);
+}
+
 void destroy_window(InterfaceInfo* _info, Window* window)
 {
-    Buffer* buffer = &window->buffer;
+    for (size_t b = 0; b < BUFFER_COUNT; b++)
+    {
+        Buffer* buffer = window->buffers[b];
 
-    wl_buffer_destroy(buffer->buffer);
+        wl_buffer_destroy(buffer->buffer);
 
-    munmap(buffer->data, window->width * window->height * 4);
+        munmap(buffer->data, window->width * window->height * 4);
 
-    close(buffer->shm_fd);
-    shm_unlink(buffer->shm_id);
-    free(buffer->shm_id);
+        close(buffer->shm_fd);
+        shm_unlink(buffer->shm_id);
+        free(buffer->shm_id);
+
+	free(buffer);
+    }
+
+    if (window->callback) {
+        wl_callback_destroy(window->callback); }
 
     destroy_shell_surface(_info, window->shell_surface);
 
@@ -406,6 +463,21 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
 { }
+
+
+// WAYLAND CALLBACK (= 'REDRAW') CALLBACKS
+
+void wl_callback_needs_redraw(void* data, struct wl_callback* callback, uint32_t serial)
+{
+    Window *window = data;
+
+    wl_callback_destroy(window->callback);
+    window->callback = NULL;
+
+    for (size_t b = 0; b < BUFFER_COUNT; b++) {
+        if (window->buffers[b] == window->current) {
+	    redraw_window(window, window->buffers[(b < BUFFER_COUNT-1) ? b+1 : 0]); } }
+}
 
 
 // WAYLAND SHELL CALLBACKS
