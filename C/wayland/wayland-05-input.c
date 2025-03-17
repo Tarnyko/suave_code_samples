@@ -1,5 +1,5 @@
 /*
-* wayland-04-shm_software_rendering-redraw.c
+* wayland-05-input.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -40,6 +40,22 @@
 #include "_deps/xdg-shell-unstable-v6-client-protocol.h"
 
 
+char *os_button_code_to_string(uint32_t code)
+{
+    switch (code)
+    {
+# ifdef __linux__
+      // (see "<linux/input-event-codes.h>")
+      case 0x110: return "Left";
+      case 0x111: return "Right";
+      case 0x112: return "Middle";
+# endif
+      default: return "Other";
+    }
+}
+
+
+
 // My prototypes
 
 typedef enum {
@@ -51,8 +67,6 @@ typedef enum {
 } ShellId;
 
 
-#define BUFFER_COUNT 2                 // double-buffering
-
 typedef struct {
     char*             shm_id;          // UNIX shared memory namespace...
     int               shm_fd;          // ... whose file descriptor is...
@@ -62,11 +76,9 @@ typedef struct {
 } Buffer;
 
 typedef struct {
-    Buffer*             buffers[BUFFER_COUNT];
-    Buffer*             current;
+    Buffer              buffer;
 
-    struct wl_callback* callback;        // A redraw callback that fires...
-    struct wl_surface*  surface;         // ...on a raw Wayland surface...
+    struct wl_surface*  surface;         // Wayland surface object...
     void*               shell_surface;   // ...handled by a window manager
 
     int                 width;
@@ -87,6 +99,11 @@ typedef struct {
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
 
     struct wl_shm*        shm;           // 'shared mem': software renderer
+
+    struct wl_seat*       seat;          // 'seat': input devices
+    struct wl_keyboard*   keyboard;      //  (among: - keyboard
+    struct wl_pointer*    pointer;       //          - mouse
+    struct wl_touch*      touch;         //          - touchscreen)
 } InterfaceInfo;
 
 
@@ -96,7 +113,6 @@ void destroy_shell_surface(InterfaceInfo*, void*);
 
 Window* create_window(InterfaceInfo*, char*, int, int);
 void destroy_window(InterfaceInfo*, Window*);
-void redraw_window(Window*, Buffer*);
 
 
 // Wayland predefined interfaces prototypes
@@ -110,10 +126,22 @@ static const struct wl_registry_listener wl_registry_listener = {
 };
 
 
-void wl_callback_needs_redraw(void*, struct wl_callback*, uint32_t);
+void wl_seat_handle_capabilities(void*, struct wl_seat*, enum wl_seat_capability);
 
-static const struct wl_callback_listener wl_callback_listener = {
-    wl_callback_needs_redraw
+static const struct wl_seat_listener wl_seat_listener = {
+    wl_seat_handle_capabilities
+};
+
+void wl_pointer_handle_enter(void*, struct wl_pointer*, uint32_t, struct wl_surface*, wl_fixed_t, wl_fixed_t);
+void wl_pointer_handle_leave(void*, struct wl_pointer*, uint32_t, struct wl_surface*);
+void wl_pointer_handle_motion(void*, struct wl_pointer*, uint32_t, wl_fixed_t, wl_fixed_t);
+void wl_pointer_handle_button(void*, struct wl_pointer*, uint32_t, uint32_t, uint32_t, uint32_t);
+
+static const struct wl_pointer_listener wl_pointer_listener = {
+    wl_pointer_handle_enter,
+    wl_pointer_handle_leave,
+    wl_pointer_handle_motion,
+    wl_pointer_handle_button
 };
 
 
@@ -189,10 +217,10 @@ int main(int argc, char* argv[])
 
     // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
     wl_display_roundtrip(display);
-    assert(_info.compositor);
 
     // now this should have been filled by the callbacks
     printf("Compositor is: ");
+    assert(_info.compositor);
     switch (_info.compositorId)
     {
         case E_WESTON : printf("Weston.\n\n");     break;
@@ -218,11 +246,23 @@ int main(int argc, char* argv[])
     }
     printf("Shell/window manager: '%s'\n\n", shell_name);
 
+    // look for the mouse, and warn if it is missing
+    if (!_info.seat) {
+        fprintf(stderr, "No input 'wl_seat' interface found! The example will run, but lack purpose.\n");
+    } else {
+        wl_seat_add_listener(_info.seat, &wl_seat_listener, &_info);
+        wl_display_roundtrip(display);
+
+        if(!_info.pointer) {
+            fprintf(stderr, "No mouse found! The example will run, but lack purpose.\n");
+        } else {
+            wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, NULL); } }
+
     // MAIN LOOP!
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
 
-        printf("Looping...\n\n");
+        printf("\nLooping...\n\n");
 
         while (loop_result != -1) {
             loop_result = wl_display_dispatch(display); }
@@ -242,6 +282,14 @@ int main(int argc, char* argv[])
         zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
+    if (_info.touch) {
+        wl_touch_destroy(_info.touch); }
+    if (_info.pointer) {
+        wl_pointer_destroy(_info.pointer); }
+    if (_info.keyboard) {
+        wl_keyboard_destroy(_info.keyboard); }
+    if (_info.seat) {
+        wl_seat_destroy(_info.seat); }
     if (_info.shm) {
         wl_shm_destroy(_info.shm); }
     wl_compositor_destroy(_info.compositor);
@@ -332,6 +380,7 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
 Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 {
     Window* window = calloc(1, sizeof(Window));
+    Buffer* buffer = &window->buffer;
 
     window->width = width;
     window->height = height;
@@ -348,93 +397,48 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
     wl_display_roundtrip(_info->display);
 
-    for (size_t b = 0; b < BUFFER_COUNT; b++)
-    {
-        window->buffers[b] = calloc(1, sizeof(Buffer));
+    // 1) create a POSIX shared memory object (name must contain a single '/')
+    char* slash = strrchr(title, '/');
+    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
+    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
+    // allocate as much raw bytes as needed pixels in the file descriptor
+    assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
 
-        Buffer* buffer = window->buffers[b];
+    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
+    buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
+                        MAP_SHARED, buffer->shm_fd, 0);
+    assert(buffer->data);
 
-        // 1) create a POSIX shared memory object (name must contain a single '/')
-        char* slash = strrchr(title, '/');
-        asprintf(&buffer->shm_id, "/%s-%zd", (slash ? slash + 1 : title), b);
-        buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-        // allocate as much raw bytes as needed pixels in the file descriptor
-        assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
-
-        // 2) expose it as a void* buffer, so our code can use 'memset()' directly
-        buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
-                            MAP_SHARED, buffer->shm_fd, 0);
-        assert(buffer->data);
-
-        // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-        struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
+    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
+    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
                                                       width * height * 4);
-        // and create the final 'wl_buffer' abstraction
-        buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
-                                                   width * 4, WL_SHM_FORMAT_XRGB8888);
-        wl_shm_pool_destroy(shm_pool);
+    // and create the final 'wl_buffer' abstraction
+    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
+		                               width * 4, WL_SHM_FORMAT_XRGB8888);
+    wl_shm_pool_destroy(shm_pool);
 
-        // set the initial raw buffer content, only White pixels (0xFF)
-        memset(buffer->data, 0xFF, width * height * 4);
-    }
+    // set the initial raw buffer content, only White pixels (0xFF)
+    memset(buffer->data, 0xFF, width * height * 4);
 
-    // we do not call 'redraw' from the main loop, because 
-    redraw_window(window, window->buffers[0]);
+    // 4) attach our 'wl_buffer' to our 'wl_surface', and commit it
+    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
+    wl_surface_damage(window->surface, 0, 0, width, height);
+    wl_surface_commit(window->surface);
 
     return window;
 }
 
-void redraw_window(Window* window, Buffer* buffer)
-{
-    const size_t window_bound = (window->width * window->height * 4);
-
-    static size_t pos = 0;
-    static uint8_t motif[] = {0x00,0x00,0x00,0x00,0x42,0x42,0x42,0x42,
-                             0xBB,0xBB,0xBB,0xBB,0xCA,0xCA,0xCA,0xCA};
-
-    pos = pos < (window_bound - sizeof(motif))
-	  ? pos + sizeof(motif)
-	  : window_bound - pos;
-
-    for (size_t m = 0; m < sizeof(motif); m++) {
-        motif[m] += m; }
-
-    memcpy(buffer->data + pos, motif, sizeof(motif));
-
-    // 1) attach our 'wl_buffer' to our 'wl_surface'
-    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(window->surface, 0, 0, window->width, window->height);
-
-    // 2) mark the buffer, so the redraw callback can cycle to the next one
-    window->current = buffer;
-
-    // 3) set a redraw callback to be fired by the compositor
-    window->callback = wl_surface_frame(window->surface);
-    wl_callback_add_listener(window->callback, &wl_callback_listener, window);
-
-    // 4) commit our 'wl_surface'!
-    wl_surface_commit(window->surface);
-}
-
 void destroy_window(InterfaceInfo* _info, Window* window)
 {
-    for (size_t b = 0; b < BUFFER_COUNT; b++)
-    {
-        Buffer* buffer = window->buffers[b];
+    Buffer* buffer = &window->buffer;
 
-        wl_buffer_destroy(buffer->buffer);
+    wl_buffer_destroy(buffer->buffer);
 
-        munmap(buffer->data, window->width * window->height * 4);
+    munmap(buffer->data, window->width * window->height * 4);
 
-        close(buffer->shm_fd);
-        shm_unlink(buffer->shm_id);
-        free(buffer->shm_id);
-
-	free(buffer);
-    }
-
-    if (window->callback) {
-        wl_callback_destroy(window->callback); }
+    close(buffer->shm_fd);
+    shm_unlink(buffer->shm_id);
+    free(buffer->shm_id);
 
     destroy_shell_surface(_info, window->shell_surface);
 
@@ -452,6 +456,7 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 
     if (!strcmp(name, "wl_compositor"))         { _info->compositor  = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
     } else if (!strcmp(name, "wl_shm"))         { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
+    } else if (!strcmp(name, "wl_seat"))        { _info->seat        = wl_registry_bind(registry, serial, &wl_seat_interface, 1);
     } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
     } else if (!strcmp(name, "xdg_wm_base"))    { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
     } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
@@ -465,18 +470,46 @@ void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t ser
 { }
 
 
-// WAYLAND CALLBACK (= 'REDRAW') CALLBACKS
+// WAYLAND SEAT CALLBACKS
 
-void wl_callback_needs_redraw(void* data, struct wl_callback* callback, uint32_t serial)
+void wl_seat_handle_capabilities(void* data, struct wl_seat* seat, enum wl_seat_capability capabilities)
 {
-    Window *window = data;
+    InterfaceInfo* _info = data;
 
-    wl_callback_destroy(window->callback);
-    window->callback = NULL;
+    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
+        puts("Seats: keyboard discovered!");
+        _info->keyboard = wl_seat_get_keyboard(seat);
+    }
+    if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
+        puts("Seats: mouse discovered!");
+        _info->pointer = wl_seat_get_pointer(seat);
+    }
+    if (capabilities & WL_SEAT_CAPABILITY_TOUCH) {
+        puts("Seats: touchscreen discovered!");
+        _info->touch = wl_seat_get_touch(seat);
+    }
+}
 
-    for (size_t b = 0; b < BUFFER_COUNT; b++) {
-        if (window->buffers[b] == window->current) {
-	    redraw_window(window, window->buffers[(b < BUFFER_COUNT-1) ? b+1 : 0]); } }
+void wl_pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface,
+                             wl_fixed_t, wl_fixed_t)
+{ puts("Mouse enters window!"); }
+
+void wl_pointer_handle_leave(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface)
+{ puts("Mouse leaves window!"); }
+
+void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t serial, wl_fixed_t sx, wl_fixed_t sy)
+{ printf("Mouse moves at: %d:%d\n", wl_fixed_to_int(sx), wl_fixed_to_int(sy)); }
+
+void wl_pointer_handle_button(void* data, struct wl_pointer* pointer, uint32_t serial, uint32_t time,
+                              uint32_t button, uint32_t state)
+{
+  char* button_str = os_button_code_to_string(button);
+
+  switch (state) {
+    case WL_POINTER_BUTTON_STATE_RELEASED:  printf("Mouse button '%s' released!\n", button_str); return;
+    case WL_POINTER_BUTTON_STATE_PRESSED:   printf("Mouse button '%s' pressed!\n", button_str); return;
+    default:
+  }
 }
 
 
