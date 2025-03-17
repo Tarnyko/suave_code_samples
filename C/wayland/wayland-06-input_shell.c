@@ -50,7 +50,7 @@ char *os_button_code_to_string(uint32_t code)
       case 0x111: return "Right";
       case 0x112: return "Middle";
 # endif
-      default:  return "Other";
+      default: return "Other";
     }
 }
 
@@ -115,9 +115,9 @@ typedef struct {
     struct wl_shm*        shm;           // 'shared mem': software renderer
 
     struct wl_seat*       seat;          // 'seat': input devices
-    struct wl_keyboard*   keyboard;      // (among: - keyboard
-    struct wl_pointer*    pointer;       //         - mouse
-    struct wl_touch*      touch;         //         - touchscreen)
+    struct wl_keyboard*   keyboard;      //  (among: - keyboard
+    struct wl_pointer*    pointer;       //          - mouse
+    struct wl_touch*      touch;         //          - touchscreen)
 } InterfaceInfo;
 
 
@@ -731,9 +731,10 @@ void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
 
   uint32_t *state;
   wl_array_for_each(state, states) {
-    if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED) {
-        window->maximized = true;
-        window->orig_width = window->width;
+    if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED &&
+          width > 0 && height > 0) {   // for wlroots
+        window->maximized   = true;
+        window->orig_width  = window->width;
         window->orig_height = window->height;
 
         wl_display_roundtrip(_info->display);
@@ -760,9 +761,10 @@ void zxdg_toplevel_v6_configure(void* data, struct zxdg_toplevel_v6* xdg_topleve
 
   uint32_t *state;
   wl_array_for_each(state, states) {
-    if (*state == ZXDG_TOPLEVEL_V6_STATE_MAXIMIZED) {
-        window->maximized = true;
-        window->orig_width = window->width;
+    if (*state == ZXDG_TOPLEVEL_V6_STATE_MAXIMIZED &&
+          width > 0 && height > 0) {   // for wlroots
+        window->maximized   = true;
+        window->orig_width  = window->width;
         window->orig_height = window->height;
 
         wl_display_roundtrip(_info->display);
