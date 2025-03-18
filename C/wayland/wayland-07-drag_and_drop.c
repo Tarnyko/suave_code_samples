@@ -1,5 +1,5 @@
 /*
-* wayland-06-input_shell.c
+* wayland-07-drag_and_drop.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -59,6 +59,7 @@ char *os_button_code_to_string(uint32_t code)
 // My prototypes
 
 #define TITLEBAR_HEIGHT 40
+#define SELECTION_WIDTH 20
 
 typedef enum {
     E_UNKNOWN = 0, E_WESTON = 1, E_GNOME = 2, E_KDE = 3, E_WLROOTS = 4
@@ -88,6 +89,7 @@ typedef struct {
     void*               shell_surface;   // ...handled by a window manager
 
     ZoneId              active_zone;
+    int                 active_selection[2];
     uint32_t            pointer_pressed_serial;
 
     char*               title;
@@ -118,6 +120,10 @@ typedef struct {
     struct wl_keyboard*   keyboard;      //  (among: - keyboard
     struct wl_pointer*    pointer;       //          - mouse
     struct wl_touch*      touch;         //          - touchscreen)
+
+    struct wl_data_device_manager* dd_manager;   // drag & drop...
+    struct wl_data_device* dd;               ;   // ... seat-specific:
+    struct wl_data_source* ds;               ;   // - source data
 } InterfaceInfo;
 
 
@@ -142,6 +148,7 @@ typedef enum {
 
 void draw_titlebar(Window*, int);
 void draw_zone(Window*, int, ColorId, ZoneId);
+void draw_selection(Window*, ColorId, int, int);
 
 
 // Wayland predefined interfaces prototypes
@@ -171,6 +178,17 @@ static const struct wl_pointer_listener wl_pointer_listener = {
     wl_pointer_handle_leave,
     wl_pointer_handle_motion,
     wl_pointer_handle_button
+};
+
+
+void wl_data_source_target(void*, struct wl_data_source*, const char*);
+void wl_data_source_send(void*, struct wl_data_source*, const char*, int32_t);
+void wl_data_source_cancelled(void*, struct wl_data_source*);
+ 
+static const struct wl_data_source_listener wl_data_source_listener = {
+    wl_data_source_target,
+    wl_data_source_send,
+    wl_data_source_cancelled
 };
 
 
@@ -287,15 +305,25 @@ int main(int argc, char* argv[])
 
         if (!_info.pointer) {
             fprintf(stderr, "No mouse found! The example will run, but lack purpose.\n"); }
+        if (!_info.dd_manager) {
+            fprintf(stderr, "No drag-and-drop support! The example will run, but lack purpose.\n"); }
     }
 
     // MAIN LOOP!
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
 
-        // if feasible, attach the window to pointer events
+        // if feasible, attach the window to pointer events...
         if (_info.pointer) {
-            wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, &_info); }
+            wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, &_info);
+            // ...  then attach drag & drop objects to the pointer's seat
+            if (_info.dd_manager) {
+                _info.dd = wl_data_device_manager_get_data_device(_info.dd_manager, _info.seat);
+                _info.ds = wl_data_device_manager_create_data_source(_info.dd_manager);
+                wl_data_source_add_listener(_info.ds, &wl_data_source_listener, window);
+                wl_data_source_offer(_info.ds, "text/plain;charset=utf-8");
+            }
+        }
 
         printf("\nLooping...\n\n");
 
@@ -317,6 +345,12 @@ int main(int argc, char* argv[])
         zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
+    if (_info.ds) {
+        wl_data_source_destroy(_info.ds); }
+    if (_info.dd) {
+        wl_data_device_destroy(_info.dd); }
+    if (_info.dd_manager) {
+        wl_data_device_manager_destroy(_info.dd_manager); }
     if (_info.touch) {
         wl_touch_destroy(_info.touch); }
     if (_info.pointer) {
@@ -604,6 +638,31 @@ void draw_zone(Window* window, int width, ColorId color, ZoneId zone)
                                    +   (i)*(zone * width * 4), color, width * 4); }
 }
 
+void draw_selection(Window* window, ColorId color, int x, int y)
+{
+    const int potential_width = SELECTION_WIDTH;
+
+    const int potential_x = x - potential_width / 2;
+    int real_x = (potential_x < 0) ? 0 : ((potential_x > window->width) ? window->width : potential_x);
+
+    const int potential_y = y - potential_width / 2;
+    int real_y = (potential_y < TITLEBAR_HEIGHT+1) ? TITLEBAR_HEIGHT+1 : ((potential_y > window->height) ? window->height : potential_y);
+
+    int real_width  = (real_x + potential_width < window->width) ? potential_width : window->width - real_x;
+    int real_height = (real_y + potential_width < window->height) ? potential_width : window->height - real_y;
+    
+    memset(window->buffer.data + (TITLEBAR_HEIGHT+1) * window->width * 4, E_WHITE,
+           (window->width * window->height * 4) - (TITLEBAR_HEIGHT+1) * window->width * 4);
+
+    for (int i = 0; i < real_height; i++) {
+        memset(window->buffer.data + ((real_y + i) * window->width * 4)
+                                   + (real_x * 4), color, real_width*4); }
+
+    wl_surface_attach(window->surface, window->buffer.buffer, 0, 0);
+    wl_surface_damage(window->surface, 0, 0, window->width, window->height);
+    wl_surface_commit(window->surface);
+}
+
 
 // WAYLAND REGISTRY CALLBACKS
 
@@ -611,16 +670,17 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 {
     InterfaceInfo* _info = data;
 
-    if (!strcmp(name, "wl_compositor"))         { _info->compositor  = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
-    } else if (!strcmp(name, "wl_shm"))         { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
-    } else if (!strcmp(name, "wl_seat"))        { _info->seat        = wl_registry_bind(registry, serial, &wl_seat_interface, 1);
-    } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
-    } else if (!strcmp(name, "xdg_wm_base"))    { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
-    } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
-    } else if (strstr(name, "gtk_shell"))       { _info->compositorId = E_GNOME;
-    } else if (strstr(name, "plasma_shell"))    { _info->compositorId = E_KDE;
-    } else if (strstr(name, "wlr_layer_shell")) { _info->compositorId = E_WLROOTS;
-    } else if (strstr(name, "weston"))          { _info->compositorId = E_WESTON; }
+    if (!strcmp(name, "wl_compositor"))                 { _info->compositor  = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
+    } else if (!strcmp(name, "wl_shm"))                 { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
+    } else if (!strcmp(name, "wl_seat"))                { _info->seat        = wl_registry_bind(registry, serial, &wl_seat_interface, 1);
+    } else if (!strcmp(name, "wl_data_device_manager")) { _info->dd_manager  = wl_registry_bind(registry, serial, &wl_data_device_manager_interface, 1);
+    } else if (!strcmp(name, "wl_shell"))               { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
+    } else if (!strcmp(name, "xdg_wm_base"))            { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
+    } else if (strstr(name, "xdg_shell"))               { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
+    } else if (strstr(name, "gtk_shell"))               { _info->compositorId = E_GNOME;
+    } else if (strstr(name, "plasma_shell"))            { _info->compositorId = E_KDE;
+    } else if (strstr(name, "wlr_layer_shell"))         { _info->compositorId = E_WLROOTS;
+    } else if (strstr(name, "weston"))                  { _info->compositorId = E_WESTON; }
 }
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
@@ -652,7 +712,14 @@ void wl_pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_t se
 { puts("Mouse enters window!"); }
 
 void wl_pointer_handle_leave(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface)
-{ puts("Mouse leaves window!"); }
+{
+  InterfaceInfo* _info = data;
+  Window* window = _info->window;
+
+  puts("Mouse leaves window!");
+
+  window->pointer_pressed_serial = 0;
+}
 
 void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t serial, wl_fixed_t sx, wl_fixed_t sy)
 { 
@@ -665,6 +732,16 @@ void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t s
 
   if (y > TITLEBAR_HEIGHT) {
       window->active_zone = E_MAIN;
+ 
+      if (window->pointer_pressed_serial > 0 && !window->maximized) {
+        window->active_selection[0] = x;
+        window->active_selection[1] = y;
+        puts("drag-and-drop: action initiated!");
+        wl_data_device_start_drag(_info->dd, _info->ds, window->surface,
+                                  NULL, window->pointer_pressed_serial);
+      } else {
+        draw_selection(window, E_GRAY, x, y);
+      }
   } else {
     if (x > (window->width - (E_CLOSE * TITLEBAR_HEIGHT))) {
       window->active_zone = E_CLOSE;
@@ -713,11 +790,43 @@ void wl_pointer_handle_button(void* data, struct wl_pointer* pointer, uint32_t s
                            return maximize_shell_surface(_info, window->shell_surface); }
         case E_MINIMIZE: { puts("'MINIMIZE' button has been pressed!");
                            return minimize_shell_surface(_info, window->shell_surface); }
-        default: return;
+        default:
       }
     }
-    default: return;
+    default:
   }
+}
+
+
+// WAYLAND DATA_SOURCE CALLBACKS
+
+void wl_data_source_target(void* data, struct wl_data_source* source, const char* mime_type)
+{
+  if (!mime_type) {
+    puts("drag-and-drop: destination client does not accept this MIME type.");
+    return;
+  }
+  printf("drag-and-drop: MIME type '%s' accepted by destination client.\n", mime_type);
+}
+
+void wl_data_source_send(void* data, struct wl_data_source* source, const char* mime_type, int32_t fd)
+{
+  if (!mime_type) {
+    puts("drag-and-drop: destination client does not accept this MIME type.");
+    return;
+  }
+  Window* window = data;
+
+  char* text;
+  asprintf(&text, "Hello from '%s', my selection was %dx%d!\n",
+           window->title, window->active_selection[0], window->active_selection[1]);
+  write(fd, text, strlen(text));
+  free(text);
+}
+
+void wl_data_source_cancelled(void* data, struct wl_data_source* source)
+{
+  puts("drag-and-drop: action cancelled by destination client.");
 }
 
 
