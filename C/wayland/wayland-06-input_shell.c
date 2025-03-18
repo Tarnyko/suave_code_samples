@@ -129,8 +129,10 @@ void maximize_shell_surface(InterfaceInfo*, void*);
 void move_shell_surface(InterfaceInfo*, void*, uint32_t);
 
 Window* create_window(InterfaceInfo*, char*, int, int);
-void resize_window(InterfaceInfo*, Window*, int, int);
 void destroy_window(InterfaceInfo*, Window*);
+void create_window_buffer(InterfaceInfo*, Window*);
+void destroy_window_buffer(InterfaceInfo*, Window*);
+void resize_window(InterfaceInfo*, Window*, int, int);
 void decorate_window(Window*);
 
 
@@ -290,7 +292,6 @@ int main(int argc, char* argv[])
     // MAIN LOOP!
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
-        decorate_window(window);
 
         // if feasible, attach the window to pointer events
         if(_info.pointer) {
@@ -436,6 +437,7 @@ void maximize_shell_surface(InterfaceInfo* _info, void* shell_surface)
             return wl_shell_surface_set_maximized((struct wl_shell_surface*) shell_surface, NULL);
         }
         window->maximized = false;
+        wl_shell_surface_set_toplevel((struct wl_shell_surface*) shell_surface);
         return resize_window(_info, window, window->orig_width, window->orig_height);
       }
       case E_XDG_WM_BASE:
@@ -443,6 +445,7 @@ void maximize_shell_surface(InterfaceInfo* _info, void* shell_surface)
         if (!window->maximized) {
             return xdg_toplevel_set_maximized((struct xdg_toplevel*) shell_surface); }
         window->maximized = false;
+        xdg_toplevel_unset_maximized((struct xdg_toplevel*) shell_surface);
         return resize_window(_info, window, window->orig_width, window->orig_height);
       }
       case E_XDG_SHELL:
@@ -450,6 +453,7 @@ void maximize_shell_surface(InterfaceInfo* _info, void* shell_surface)
         if (!window->maximized) {
             return zxdg_toplevel_v6_set_maximized((struct zxdg_toplevel_v6*) shell_surface); }
         window->maximized = false;
+        zxdg_toplevel_v6_unset_maximized((struct zxdg_toplevel_v6*) shell_surface);
         return resize_window(_info, window, window->orig_width, window->orig_height);
       }
       default:
@@ -472,10 +476,9 @@ void move_shell_surface(InterfaceInfo* _info, void* shell_surface, uint32_t seri
 Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 {
     Window* window = calloc(1, sizeof(Window));
-    Buffer* buffer = &window->buffer;
 
-    window->title = title;
-    window->width = width;
+    window->title  = title;
+    window->width  = width;
     window->height = height;
 
     window->surface = wl_compositor_create_surface(_info->compositor);
@@ -490,58 +493,64 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
     wl_display_roundtrip(_info->display);
 
-    // 1) create a POSIX shared memory object (name must contain a single '/')
-    char* slash = strrchr(title, '/');
-    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
-    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-    // allocate as much raw bytes as needed pixels in the file descriptor
-    assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
+    create_window_buffer(_info, window);
 
-    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
-    buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
-                        MAP_SHARED, buffer->shm_fd, 0);
-    assert(buffer->data);
+    decorate_window(window);
 
-    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
-                                                      width * height * 4);
-    // and create the final 'wl_buffer' abstraction
-    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
-		                               width * 4, WL_SHM_FORMAT_XRGB8888);
-    wl_shm_pool_destroy(shm_pool);
-
-    // set the initial raw buffer content, only White pixels
-    memset(buffer->data, E_WHITE, width * height * 4);
-
-    // 4) attach our 'wl_buffer' to our 'wl_surface', and commit it
-    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
     wl_surface_damage(window->surface, 0, 0, width, height);
     wl_surface_commit(window->surface);
 
     _info->window = window;
-
     return window;
 }
 
-void resize_window(InterfaceInfo* _info, Window* window, int width, int height)
+void destroy_window(InterfaceInfo* _info, Window* window)
 {
-  // retain some state to pass over
-  char* title     = window->title;
-  int orig_width  = window->orig_width;
-  int orig_height = window->orig_height;
-  bool maximized  = window->maximized;
+    destroy_window_buffer(_info, window);
 
-  destroy_window(_info, window);
-  window = create_window(_info, title, width, height);
-  window->orig_width  = orig_width;
-  window->orig_height = orig_height;
-  window->maximized   = maximized;
-  decorate_window(window);
+    destroy_shell_surface(_info, window->shell_surface);
 
-  _info->window = window;
+    wl_surface_destroy(window->surface);
+
+    _info->window = NULL;
+    free(window);
 }
 
-void destroy_window(InterfaceInfo* _info, Window* window)
+void create_window_buffer(InterfaceInfo* _info, Window* window)
+{
+    Buffer* buffer = &window->buffer;
+
+    size_t buffer_size = window->width * window->height * 4;   // *4 = RGBA
+
+    // 1) create a POSIX shared memory object (name must contain a single '/')
+    char* slash = strrchr(window->title, '/');
+    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : window->title));
+    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
+    // allocate as much raw bytes as needed pixels in the file descriptor
+    assert(!ftruncate(buffer->shm_fd, buffer_size));
+
+    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
+    buffer->data = mmap(NULL, buffer_size, PROT_READ|PROT_WRITE, MAP_SHARED,
+                        buffer->shm_fd, 0);
+    assert(buffer->data);
+
+    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
+    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
+                                                      buffer_size);
+    // and create the final 'wl_buffer' abstraction
+    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0,
+                                     window->width, window->height,
+                                     window->width * 4, WL_SHM_FORMAT_XRGB8888);
+    wl_shm_pool_destroy(shm_pool);
+
+    // set the initial raw buffer content, only White pixels
+    memset(buffer->data, E_WHITE, buffer_size);
+
+    // 4) attach our 'wl_buffer' to our 'wl_surface'
+    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
+}
+
+void destroy_window_buffer(InterfaceInfo* _info, Window* window)
 {
     Buffer* buffer = &window->buffer;
 
@@ -552,20 +561,32 @@ void destroy_window(InterfaceInfo* _info, Window* window)
     close(buffer->shm_fd);
     shm_unlink(buffer->shm_id);
     free(buffer->shm_id);
-
-    destroy_shell_surface(_info, window->shell_surface);
-
-    wl_surface_destroy(window->surface);
-
-    free(window);
 }
 
+void resize_window(InterfaceInfo* _info, Window* window, int width, int height)
+{
+  wl_display_roundtrip(_info->display);
+
+  destroy_window_buffer(_info, window);
+
+  window->width  = width;
+  window->height = height;
+
+  create_window_buffer(_info, window);
+
+  decorate_window(window);
+
+  wl_surface_damage(window->surface, 0, 0, width, height);
+  wl_surface_commit(window->surface);
+
+}
 
 void decorate_window(Window* window)
 {
-    const int width = TITLEBAR_HEIGHT;
+    if (!window->maximized) {
+        draw_titlebar(window, TITLEBAR_HEIGHT); }
 
-    draw_titlebar(window, width);
+    const int width = TITLEBAR_HEIGHT;
     draw_zone(window, width, E_BLACK,  E_CLOSE);
     draw_zone(window, width, E_GRAY,   E_MAXIMIZE);
     draw_zone(window, width, E_SILVER, E_MINIMIZE);
@@ -573,8 +594,7 @@ void decorate_window(Window* window)
 
 void draw_titlebar(Window* window, int width)
 {
-    memset(window->buffer.data + (width*4)*(width*4)*2 * (window->maximized ? 2 : 1),
-           E_BLACK, window->width*4);
+    memset(window->buffer.data + (width*4)*(width*4)*2, E_BLACK, window->width*4);
 }
 
 void draw_zone(Window* window, int width, ColorId color, ZoneId zone)
@@ -730,15 +750,16 @@ void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
   Window* window = _info->window;
 
   uint32_t *state;
-  wl_array_for_each(state, states) {
-    if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED &&
-          width > 0 && height > 0) {   // for wlroots
+  wl_array_for_each(state, states)
+  {
+    if (width > 0 && height > 0) {
+      if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED ||
+          *state == XDG_TOPLEVEL_STATE_FULLSCREEN) {
         window->maximized   = true;
         window->orig_width  = window->width;
         window->orig_height = window->height;
-
-        wl_display_roundtrip(_info->display);
-        resize_window(_info, _info->window, width, height);
+      }
+      resize_window(_info, _info->window, width, height);
     }
   }
 }
@@ -761,14 +782,14 @@ void zxdg_toplevel_v6_configure(void* data, struct zxdg_toplevel_v6* xdg_topleve
 
   uint32_t *state;
   wl_array_for_each(state, states) {
-    if (*state == ZXDG_TOPLEVEL_V6_STATE_MAXIMIZED &&
-          width > 0 && height > 0) {   // for wlroots
+    if (width > 0 && height > 0) {
+      if (*state == ZXDG_TOPLEVEL_V6_STATE_MAXIMIZED ||
+          *state == ZXDG_TOPLEVEL_V6_STATE_FULLSCREEN) {
         window->maximized   = true;
         window->orig_width  = window->width;
         window->orig_height = window->height;
-
-        wl_display_roundtrip(_info->display);
-        resize_window(_info, _info->window, width, height);
+      }
+      resize_window(_info, _info->window, width, height);
     }
   }
 }
