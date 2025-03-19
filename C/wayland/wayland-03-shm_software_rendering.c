@@ -53,17 +53,15 @@ typedef enum {
 
 typedef struct {
     char*             shm_id;          // UNIX shared memory namespace...
-    int               shm_fd;          // ... whose file descriptor is...
-    void*             data;            // ... mem-mapped to a raw buffer
-
-    struct wl_buffer* buffer;          // Wayland abstraction of the above
+    int               shm_fd;          // ...whose file descriptor is...
+    void*             data;            // ...mem-mapped to a Raw buffer.
+    struct wl_buffer* buffer;          // Wayland abstraction of the above.
 } Buffer;
 
 typedef struct {
-    Buffer              buffer;
-
-    struct wl_surface*  surface;         // Wayland surface object...
-    void*               shell_surface;   // ...handled by a window manager
+    Buffer              buffer;          // Raw/Wayland buffer mapped to...
+    struct wl_surface*  surface;         // ...a Wayland surface object...
+    void*               shell_surface;   // ...handled by a window manager.
 
     int                 width;
     int                 height;
@@ -179,7 +177,7 @@ int main(int argc, char* argv[])
     wl_display_roundtrip(display);
     assert(_info.compositor);
 
-    // now this should have been filled by the callbacks
+    // now this should have been filled by the registry callbacks
     printf("Compositor is: ");
     switch (_info.compositorId)
     {

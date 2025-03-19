@@ -1,5 +1,5 @@
 /*
-* wayland-05-input.c
+* wayland-05-accelerated_rendering-opengl.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -20,40 +20,23 @@
 // $ sudo apt install libwayland-dev
 
 //  Compile with:
-// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client`
+// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client wayland-egl egl glesv2`
 
-#define _GNU_SOURCE      // for "asprintf()"
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-// Shared memory headers
-#include <sys/mman.h>    // for "shm_open()"
-#include <fcntl.h>       // for "O_CREAT","O_RDWR"
-
-// Wayland headers
+// Wayland
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
 #include "_deps/xdg-shell-unstable-v6-client-protocol.h"
 
-
-char *os_button_code_to_string(uint32_t code)
-{
-    switch (code)
-    {
-# ifdef __linux__
-      // (see "<linux/input-event-codes.h>")
-      case 0x110: return "Left";
-      case 0x111: return "Right";
-      case 0x112: return "Middle";
-# endif
-      default: return "Other";
-    }
-}
-
+// EGL (OpenGL, OpenGL ES)
+#include <wayland-egl.h>
+#include <EGL/egl.h>
+#include <GLES2/gl2.h>
 
 
 // My prototypes
@@ -68,21 +51,13 @@ typedef enum {
 
 
 typedef struct {
-    char*             shm_id;          // UNIX shared memory namespace...
-    int               shm_fd;          // ... whose file descriptor is...
-    void*             data;            // ... mem-mapped to a raw buffer
+    EGLSurface            egl_surface;     // EGL surface attached to...
+    struct wl_egl_window* egl_window;      // ...a Wayland-EGL glue to...
+    struct wl_surface*    surface;         // ...a Wayland surface object...
+    void*                 shell_surface;   // ...handled by a window manager.
 
-    struct wl_buffer* buffer;          // Wayland abstraction of the above
-} Buffer;
-
-typedef struct {
-    Buffer              buffer;
-
-    struct wl_surface*  surface;         // Wayland surface object...
-    void*               shell_surface;   // ...handled by a window manager
-
-    int                 width;
-    int                 height;
+    int                   width;
+    int                   height;
 } Window;
 
 
@@ -98,12 +73,13 @@ typedef struct {
     struct zxdg_shell_v6* xdg_shell;     //          - former unstable
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
 
-    struct wl_shm*        shm;           // 'shared mem': software renderer
+    EGLDisplay            egl_display;   // EGL: - display
+    EGLConfig             egl_config;    //      - configuration
+    EGLContext            egl_context;   //      - current context
 
-    struct wl_seat*       seat;          // 'seat': input devices
-    struct wl_keyboard*   keyboard;      //  (among: - keyboard
-    struct wl_pointer*    pointer;       //          - mouse
-    struct wl_touch*      touch;         //          - touchscreen)
+    bool has_egl;
+    bool has_opengl;
+    bool has_opengles;
 } InterfaceInfo;
 
 
@@ -111,7 +87,11 @@ char* elect_shell(InterfaceInfo*);
 void* create_shell_surface(InterfaceInfo*, struct wl_surface*, char*);
 void destroy_shell_surface(InterfaceInfo*, void*);
 
+void initialize_egl(InterfaceInfo*, struct wl_display*);
+bool initialize_egl_api(InterfaceInfo*, EGLDisplay, EGLenum);
+
 Window* create_window(InterfaceInfo*, char*, int, int);
+void redraw_window(InterfaceInfo*, Window*);
 void destroy_window(InterfaceInfo*, Window*);
 
 
@@ -123,25 +103,6 @@ void wl_interface_removed(void*, struct wl_registry*, uint32_t);
 static const struct wl_registry_listener wl_registry_listener = {
     wl_interface_available,
     wl_interface_removed
-};
-
-
-void wl_seat_handle_capabilities(void*, struct wl_seat*, enum wl_seat_capability);
-
-static const struct wl_seat_listener wl_seat_listener = {
-    wl_seat_handle_capabilities
-};
-
-void wl_pointer_handle_enter(void*, struct wl_pointer*, uint32_t, struct wl_surface*, wl_fixed_t, wl_fixed_t);
-void wl_pointer_handle_leave(void*, struct wl_pointer*, uint32_t, struct wl_surface*);
-void wl_pointer_handle_motion(void*, struct wl_pointer*, uint32_t, wl_fixed_t, wl_fixed_t);
-void wl_pointer_handle_button(void*, struct wl_pointer*, uint32_t, uint32_t, uint32_t, uint32_t);
-
-static const struct wl_pointer_listener wl_pointer_listener = {
-    wl_pointer_handle_enter,
-    wl_pointer_handle_leave,
-    wl_pointer_handle_motion,
-    wl_pointer_handle_button
 };
 
 
@@ -217,10 +178,10 @@ int main(int argc, char* argv[])
 
     // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
     wl_display_roundtrip(display);
-
-    // now this should have been filled by the callbacks
-    printf("Compositor is: ");
     assert(_info.compositor);
+
+    // now this should have been filled by the registry callbacks
+    printf("Compositor is: ");
     switch (_info.compositorId)
     {
         case E_WESTON : printf("Weston.\n\n");     break;
@@ -233,12 +194,6 @@ int main(int argc, char* argv[])
     char* shell_name;
     int loop_result, result = EXIT_SUCCESS;
 
-    // no need to bother if shm (software rendering) is not available...
-    if (!_info.shm) {
-        fprintf(stderr, "No software rendering 'wl_shm' interface found! Exiting...\n");
-        goto error;
-    }
-
     // choose a shell/window manager in a most-to-less-compatible order
     if (!(shell_name = elect_shell(&_info))) {
         fprintf(stderr, "No compatible window manager/shell interface found! Exiting...\n");
@@ -246,17 +201,12 @@ int main(int argc, char* argv[])
     }
     printf("Shell/window manager: '%s'\n\n", shell_name);
 
-    // look for the mouse, and warn if it is missing
-    if (!_info.seat) {
-        fprintf(stderr, "No input 'wl_seat' interface found! The example will run, but lack purpose.\n");
-    } else {
-        wl_seat_add_listener(_info.seat, &wl_seat_listener, &_info);
-        wl_display_roundtrip(display);
-
-        if(!_info.pointer) {
-            fprintf(stderr, "No mouse found! The example will run, but lack purpose.\n");
-        } else {
-            wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, NULL); } }
+    // check & initiliaze EGL
+    initialize_egl(&_info, display);
+    if (!_info.has_egl || (!_info.has_opengl && !_info.has_opengles)) {
+        fprintf(stderr, "No valid EGL/OpenGL(ES) implementation found! Exiting...\n");
+        goto error;
+    }
 
     // MAIN LOOP!
     {
@@ -265,7 +215,9 @@ int main(int argc, char* argv[])
         printf("\nLooping...\n\n");
 
         while (loop_result != -1) {
-            loop_result = wl_display_dispatch(display); }
+            loop_result = wl_display_dispatch_pending(display);
+            redraw_window(&_info, window);
+        }
 
         destroy_window(&_info, window);
     }
@@ -276,22 +228,16 @@ int main(int argc, char* argv[])
   error:
     result = EXIT_FAILURE;
   end:
+    if (_info.has_opengl || _info.has_opengles) {
+        eglDestroyContext(_info.egl_display, _info.egl_context); }
+    if (_info.has_egl) {
+        eglTerminate(_info.egl_display); }
     if (_info.xdg_wm_base) {
         xdg_wm_base_destroy(_info.xdg_wm_base); }
     if (_info.xdg_shell) {
         zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
-    if (_info.touch) {
-        wl_touch_destroy(_info.touch); }
-    if (_info.pointer) {
-        wl_pointer_destroy(_info.pointer); }
-    if (_info.keyboard) {
-        wl_keyboard_destroy(_info.keyboard); }
-    if (_info.seat) {
-        wl_seat_destroy(_info.seat); }
-    if (_info.shm) {
-        wl_shm_destroy(_info.shm); }
     wl_compositor_destroy(_info.compositor);
     wl_registry_destroy(registry);
     wl_display_flush(display);
@@ -376,71 +322,116 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
     }
 }
 
+void initialize_egl(InterfaceInfo* _info, struct wl_display* display)
+{
+    EGLDisplay egl_display = eglGetDisplay((EGLNativeDisplayType) display);
+    if (!egl_display) {
+        return; }
+
+    EGLint egl_major, egl_minor;
+    if (!eglInitialize(egl_display, &egl_major, &egl_minor)) {
+        return; }
+
+    printf("EGL version:\t %d.%d [%s]\n", egl_major, egl_minor,
+                                          eglQueryString(egl_display, EGL_VENDOR));
+    _info->has_egl = true;
+
+    _info->has_opengles = initialize_egl_api(_info, egl_display, EGL_OPENGL_ES_API);
+    if (!_info->has_opengles) {
+        _info->has_opengl = initialize_egl_api(_info, egl_display, EGL_OPENGL_API); }
+
+    _info->egl_display = egl_display;
+}
+
+bool initialize_egl_api(InterfaceInfo* _info, EGLDisplay egl_display, EGLenum api)
+{
+    if (!eglBindAPI(api)) {
+        return false; }
+
+    EGLint cfg_count = 0;
+    eglGetConfigs(egl_display, NULL, 0, &cfg_count);
+    if (cfg_count == 0) {
+        return false; }
+
+    EGLConfig egl_config, *cfgs = calloc(cfg_count, sizeof(EGLConfig));
+    EGLint valid_cfg_count, valid_cfg_attrs[] = {
+        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+        EGL_RED_SIZE, 1, EGL_GREEN_SIZE, 1, EGL_BLUE_SIZE, 1, EGL_DEPTH_SIZE, 1,
+        EGL_RENDERABLE_TYPE, (api == EGL_OPENGL_ES_API ? EGL_OPENGL_ES_BIT : EGL_OPENGL_BIT),
+        EGL_NONE
+    };
+    eglChooseConfig(egl_display, valid_cfg_attrs, cfgs, cfg_count, &valid_cfg_count);
+    if (valid_cfg_count == 0) {
+        free(cfgs);
+        return false;
+    }
+    egl_config = cfgs[0];
+    free(cfgs);
+
+    EGLint ctx_attrs[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 1,
+        EGL_NONE
+    };
+    EGLContext egl_context = eglCreateContext(egl_display, egl_config, EGL_NO_CONTEXT, ctx_attrs);
+    if (!egl_context) {
+        return false; }
+
+    _info->egl_config  = egl_config;
+    _info->egl_context = egl_context;
+    return true;
+}
+
 
 Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 {
     Window* window = calloc(1, sizeof(Window));
-    Buffer* buffer = &window->buffer;
 
     window->width = width;
     window->height = height;
 
     window->surface = wl_compositor_create_surface(_info->compositor);
     assert(window->surface);
+
+    window->egl_window = wl_egl_window_create(window->surface, width, height);
+    assert(window->egl_window);
     
+    window->egl_surface = eglCreateWindowSurface(_info->egl_display, _info->egl_config,
+                                       (EGLNativeWindowType) window->egl_window, NULL);
+    assert(window->egl_surface != EGL_NO_SURFACE);
+
+    assert(eglMakeCurrent(_info->egl_display, window->egl_surface, window->egl_surface,
+                          _info->egl_context));
+
+    printf("OpenGL version:\t %s [%s]\n", glGetString(GL_VERSION), glGetString(GL_VENDOR));
+
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base/shell expects a commit before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base/shell expects a commit before redrawing (/!\)]
     wl_surface_commit(window->surface);
 
-    // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base expects a configure event before redrawing (/!\)]
     wl_display_roundtrip(_info->display);
-
-    // 1) create a POSIX shared memory object (name must contain a single '/')
-    char* slash = strrchr(title, '/');
-    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
-    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-    // allocate as much raw bytes as needed pixels in the file descriptor
-    assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
-
-    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
-    buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
-                        MAP_SHARED, buffer->shm_fd, 0);
-    assert(buffer->data);
-
-    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
-                                                      width * height * 4);
-    // and create the final 'wl_buffer' abstraction
-    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
-		                               width * 4, WL_SHM_FORMAT_XRGB8888);
-    wl_shm_pool_destroy(shm_pool);
-
-    // set the initial raw buffer content, only White pixels (0xFF)
-    memset(buffer->data, 0xFF, width * height * 4);
-
-    // 4) attach our 'wl_buffer' to our 'wl_surface', and commit it
-    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(window->surface, 0, 0, width, height);
-    wl_surface_commit(window->surface);
 
     return window;
 }
 
+void redraw_window(InterfaceInfo* _info, Window* window)
+{
+    // these functions are common to OpenGL<->OpenGLES
+    glViewport(0, 0, window->width, window->height);
+    glClearColor(1.0, 1.0, 1.0, 0.0);   // =White (RGBA)
+    glClear(GL_COLOR_BUFFER_BIT);
+    eglSwapBuffers(_info->egl_display, window->egl_surface);
+}
+
 void destroy_window(InterfaceInfo* _info, Window* window)
 {
-    Buffer* buffer = &window->buffer;
-
-    wl_buffer_destroy(buffer->buffer);
-
-    munmap(buffer->data, window->width * window->height * 4);
-
-    close(buffer->shm_fd);
-    shm_unlink(buffer->shm_id);
-    free(buffer->shm_id);
-
     destroy_shell_surface(_info, window->shell_surface);
+
+    eglDestroySurface(_info->egl_display, window->egl_surface);
+
+    wl_egl_window_destroy(window->egl_window);
 
     wl_surface_destroy(window->surface);
 
@@ -455,8 +446,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     InterfaceInfo* _info = data;
 
     if (!strcmp(name, "wl_compositor"))         { _info->compositor  = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
-    } else if (!strcmp(name, "wl_shm"))         { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
-    } else if (!strcmp(name, "wl_seat"))        { _info->seat        = wl_registry_bind(registry, serial, &wl_seat_interface, 1);
     } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
     } else if (!strcmp(name, "xdg_wm_base"))    { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
     } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
@@ -468,49 +457,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
 { }
-
-
-// WAYLAND SEAT CALLBACKS
-
-void wl_seat_handle_capabilities(void* data, struct wl_seat* seat, enum wl_seat_capability capabilities)
-{
-    InterfaceInfo* _info = data;
-
-    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
-        puts("Seats: keyboard discovered!");
-        _info->keyboard = wl_seat_get_keyboard(seat);
-    }
-    if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
-        puts("Seats: mouse discovered!");
-        _info->pointer = wl_seat_get_pointer(seat);
-    }
-    if (capabilities & WL_SEAT_CAPABILITY_TOUCH) {
-        puts("Seats: touchscreen discovered!");
-        _info->touch = wl_seat_get_touch(seat);
-    }
-}
-
-void wl_pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface,
-                             wl_fixed_t, wl_fixed_t)
-{ puts("Mouse enters window!"); }
-
-void wl_pointer_handle_leave(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface)
-{ puts("Mouse leaves window!"); }
-
-void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t serial, wl_fixed_t sx, wl_fixed_t sy)
-{ printf("Mouse moves at: %d:%d\n", wl_fixed_to_int(sx), wl_fixed_to_int(sy)); }
-
-void wl_pointer_handle_button(void* data, struct wl_pointer* pointer, uint32_t serial, uint32_t time,
-                              uint32_t button, uint32_t state)
-{
-  char* button_str = os_button_code_to_string(button);
-
-  switch (state) {
-    case WL_POINTER_BUTTON_STATE_RELEASED:  printf("Mouse button '%s' released!\n", button_str); return;
-    case WL_POINTER_BUTTON_STATE_PRESSED:   printf("Mouse button '%s' pressed!\n", button_str); return;
-    default:
-  }
-}
 
 
 // WAYLAND SHELL CALLBACKS
