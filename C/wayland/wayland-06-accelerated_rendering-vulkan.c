@@ -1,5 +1,5 @@
 /*
-* wayland-07-input.c
+* wayland-06-accelerated_rendering-vulkan.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -20,40 +20,22 @@
 // $ sudo apt install libwayland-dev
 
 //  Compile with:
-// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client`
+// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client vulkan`
 
-#define _GNU_SOURCE      // for "asprintf()"
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-// Shared memory headers
-#include <sys/mman.h>    // for "shm_open()"
-#include <fcntl.h>       // for "O_CREAT","O_RDWR"
-
-// Wayland headers
+// Wayland
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
 #include "_deps/xdg-shell-unstable-v6-client-protocol.h"
 
-
-char *os_button_code_to_string(uint32_t code)
-{
-    switch (code)
-    {
-# ifdef __linux__
-      // (see "<linux/input-event-codes.h>")
-      case 0x110: return "Left";
-      case 0x111: return "Right";
-      case 0x112: return "Middle";
-# endif
-      default: return "Other";
-    }
-}
-
+// Vulkan
+#define VK_USE_PLATFORM_WAYLAND_KHR   // for "VkWaylandSurfaceCreateInfoKHR()"
+#include <vulkan/vulkan.h>
 
 
 // My prototypes
@@ -68,19 +50,12 @@ typedef enum {
 
 
 typedef struct {
-    char*             shm_id;          // UNIX shared memory namespace...
-    int               shm_fd;          // ...whose file descriptor is...
-    void*             data;            // ...mem-mapped to a Raw buffer.
-    struct wl_buffer* buffer;          // Wayland abstraction of the above.
-} Buffer;
+    VkSurfaceKHR          vk_surface;      // Vulkan surface attached to...
+    struct wl_surface*    surface;         // ...a Wayland surface object...
+    void*                 shell_surface;   // ...handled by a window manager.
 
-typedef struct {
-    Buffer              buffer;          // Raw/Wayland buffer mapped to...
-    struct wl_surface*  surface;         // ...a Wayland surface object...
-    void*               shell_surface;   // ...handled by a window manager.
-
-    int                 width;
-    int                 height;
+    int                   width;
+    int                   height;
 } Window;
 
 
@@ -96,12 +71,8 @@ typedef struct {
     struct zxdg_shell_v6* xdg_shell;     //          - former unstable
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
 
-    struct wl_shm*        shm;           // 'shared mem': software renderer
-
-    struct wl_seat*       seat;          // 'seat': input devices
-    struct wl_keyboard*   keyboard;      //  (among: - keyboard
-    struct wl_pointer*    pointer;       //          - mouse
-    struct wl_touch*      touch;         //          - touchscreen)
+    VkInstance            vk_instance;   // Vulkan: - instance
+    bool has_vulkan;
 } InterfaceInfo;
 
 
@@ -109,7 +80,10 @@ char* elect_shell(InterfaceInfo*);
 void* create_shell_surface(InterfaceInfo*, struct wl_surface*, char*);
 void destroy_shell_surface(InterfaceInfo*, void*);
 
+void initialize_vulkan(InterfaceInfo*);
+
 Window* create_window(InterfaceInfo*, char*, int, int);
+void redraw_window(InterfaceInfo*, Window*);
 void destroy_window(InterfaceInfo*, Window*);
 
 
@@ -121,25 +95,6 @@ void wl_interface_removed(void*, struct wl_registry*, uint32_t);
 static const struct wl_registry_listener wl_registry_listener = {
     wl_interface_available,
     wl_interface_removed
-};
-
-
-void wl_seat_handle_capabilities(void*, struct wl_seat*, enum wl_seat_capability);
-
-static const struct wl_seat_listener wl_seat_listener = {
-    wl_seat_handle_capabilities
-};
-
-void wl_pointer_handle_enter(void*, struct wl_pointer*, uint32_t, struct wl_surface*, wl_fixed_t, wl_fixed_t);
-void wl_pointer_handle_leave(void*, struct wl_pointer*, uint32_t, struct wl_surface*);
-void wl_pointer_handle_motion(void*, struct wl_pointer*, uint32_t, wl_fixed_t, wl_fixed_t);
-void wl_pointer_handle_button(void*, struct wl_pointer*, uint32_t, uint32_t, uint32_t, uint32_t);
-
-static const struct wl_pointer_listener wl_pointer_listener = {
-    wl_pointer_handle_enter,
-    wl_pointer_handle_leave,
-    wl_pointer_handle_motion,
-    wl_pointer_handle_button
 };
 
 
@@ -231,12 +186,6 @@ int main(int argc, char* argv[])
     char* shell_name;
     int loop_result, result = EXIT_SUCCESS;
 
-    // no need to bother if shm (software rendering) is not available...
-    if (!_info.shm) {
-        fprintf(stderr, "No software rendering 'wl_shm' interface found! Exiting...\n");
-        goto error;
-    }
-
     // choose a shell/window manager in a most-to-less-compatible order
     if (!(shell_name = elect_shell(&_info))) {
         fprintf(stderr, "No compatible window manager/shell interface found! Exiting...\n");
@@ -244,17 +193,12 @@ int main(int argc, char* argv[])
     }
     printf("Shell/window manager: '%s'\n\n", shell_name);
 
-    // look for the mouse, and warn if it is missing
-    if (!_info.seat) {
-        fprintf(stderr, "No input 'wl_seat' interface found! The example will run, but lack purpose.\n");
-    } else {
-        wl_seat_add_listener(_info.seat, &wl_seat_listener, &_info);
-        wl_display_roundtrip(display);
-
-        if(!_info.pointer) {
-            fprintf(stderr, "No mouse found! The example will run, but lack purpose.\n");
-        } else {
-            wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, NULL); } }
+    // check & initiliaze Vulkan
+    initialize_vulkan(&_info);
+    if (!_info.has_vulkan) {
+        fprintf(stderr, "No valid Vulkan implementation found! Exiting...\n");
+        goto error;
+    }
 
     // MAIN LOOP!
     {
@@ -263,7 +207,9 @@ int main(int argc, char* argv[])
         printf("\nLooping...\n\n");
 
         while (loop_result != -1) {
-            loop_result = wl_display_dispatch(display); }
+            loop_result = wl_display_dispatch_pending(display);
+            redraw_window(&_info, window);
+        }
 
         destroy_window(&_info, window);
     }
@@ -274,22 +220,14 @@ int main(int argc, char* argv[])
   error:
     result = EXIT_FAILURE;
   end:
+    if (_info.has_vulkan) {
+        vkDestroyInstance(_info.vk_instance, NULL); }
     if (_info.xdg_wm_base) {
         xdg_wm_base_destroy(_info.xdg_wm_base); }
     if (_info.xdg_shell) {
         zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
-    if (_info.touch) {
-        wl_touch_destroy(_info.touch); }
-    if (_info.pointer) {
-        wl_pointer_destroy(_info.pointer); }
-    if (_info.keyboard) {
-        wl_keyboard_destroy(_info.keyboard); }
-    if (_info.seat) {
-        wl_seat_destroy(_info.seat); }
-    if (_info.shm) {
-        wl_shm_destroy(_info.shm); }
     wl_compositor_destroy(_info.compositor);
     wl_registry_destroy(registry);
     wl_display_flush(display);
@@ -375,70 +313,154 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
 }
 
 
+void initialize_vulkan(InterfaceInfo* _info)
+{
+    // Check if instance can support Wayland
+
+    uint32_t vkext_count = 0;
+
+    if (vkEnumerateInstanceExtensionProperties(NULL, &vkext_count, NULL)
+          || vkext_count == 0) {
+        return; }
+
+    bool instance_has_wayland = false;
+
+    VkExtensionProperties* vkexts = calloc(vkext_count, sizeof(VkExtensionProperties));
+    vkEnumerateInstanceExtensionProperties(NULL, &vkext_count, vkexts);
+    for (uint32_t c = 0; c < vkext_count; c++) {
+        if (!strcmp(vkexts[c].extensionName, "VK_KHR_wayland_surface")) {
+            instance_has_wayland = true;
+            break;
+        }
+    }
+    free(vkexts);
+
+    if (!instance_has_wayland) {
+        return; }
+
+    // Print Vulkan version
+
+    uint32_t vulkan_major, vulkan_minor, vulkan_patch, version = VK_API_VERSION_1_0;
+    vkEnumerateInstanceVersion(&version);
+    vulkan_major = VK_VERSION_MAJOR(version);
+    vulkan_minor = VK_VERSION_MINOR(version);
+    vulkan_patch = VK_VERSION_PATCH(version);
+
+    printf("Vulkan version: %d.%d.%d ", vulkan_major, vulkan_minor, vulkan_patch);
+
+    // Create instance
+
+    char* wayland_extensions[2] = { "VK_KHR_surface", "VK_KHR_wayland_surface" };
+
+    VkInstanceCreateInfo vkinfo = {0};
+    vkinfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    vkinfo.enabledExtensionCount   = sizeof(wayland_extensions) / sizeof(char*);
+    vkinfo.ppEnabledExtensionNames = (const char**) wayland_extensions;
+
+    VkInstance vk_instance = {0};
+
+    if (vkCreateInstance(&vkinfo, NULL, &vk_instance)) {
+	_info->has_vulkan = false;
+        return; }
+
+    // Enumerate GPUs...
+
+    uint32_t vulkan_gpu_count = 0;
+
+    vkEnumeratePhysicalDevices(vk_instance, &vulkan_gpu_count, NULL);
+    if (vulkan_gpu_count == 0) {
+       vkDestroyInstance(vk_instance, NULL);
+       _info->has_vulkan = false;
+       return;
+    }
+
+    printf("[GPUs:%d", vulkan_gpu_count);
+
+    // ...along with their physical properties (name, VRAM)
+
+    VkPhysicalDevice vk_gpu, *vkgpus = calloc(vulkan_gpu_count, sizeof(VkPhysicalDevice));
+    vkEnumeratePhysicalDevices(vk_instance, &vulkan_gpu_count, vkgpus);
+    for (uint32_t c = 0; c < vulkan_gpu_count; c++) {
+        VkPhysicalDeviceProperties vkgpu_props = {0};
+        VkPhysicalDeviceMemoryProperties vkgpu_memprops = {0};
+
+        vkGetPhysicalDeviceProperties(vkgpus[c], &vkgpu_props);
+        vkGetPhysicalDeviceMemoryProperties(vkgpus[c], &vkgpu_memprops);
+
+	printf(", (%s: %ldMb)", vkgpu_props.deviceName, vkgpu_memprops.memoryHeaps[0].size / 1000000);
+    }
+    vk_gpu = vkgpus[0];
+    free(vkgpus);
+
+    puts("]");
+
+    // Check if main GPU can support swapchain commands    
+
+    uint32_t vkgpuext_count = 0;
+
+    if (vkEnumerateDeviceExtensionProperties(vk_gpu, NULL, &vkgpuext_count, NULL)
+          || vkgpuext_count == 0) {
+        return; }
+
+    bool gpu_has_swapchain = false;
+
+    VkExtensionProperties* vkgpuexts = calloc(vkgpuext_count, sizeof(VkExtensionProperties));
+    vkEnumerateDeviceExtensionProperties(vk_gpu, NULL, &vkgpuext_count, vkgpuexts);
+    for (uint32_t c = 0; c < vkgpuext_count; c++) {
+        if (!strcmp(vkgpuexts[c].extensionName, "VK_KHR_swapchain")) {
+            gpu_has_swapchain = true;
+            break;
+        }
+    }
+    free(vkgpuexts);
+
+    if (!gpu_has_swapchain) {
+        return; }
+
+    // Success!
+
+    _info->has_vulkan = true;
+    _info->vk_instance = vk_instance;
+}
+
+
 Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 {
     Window* window = calloc(1, sizeof(Window));
-    Buffer* buffer = &window->buffer;
 
     window->width = width;
     window->height = height;
 
     window->surface = wl_compositor_create_surface(_info->compositor);
     assert(window->surface);
-    
+
+    VkWaylandSurfaceCreateInfoKHR vkcreateinfo = {0};
+    vkcreateinfo.sType   = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+    vkcreateinfo.display = _info->display;
+    vkcreateinfo.surface = window->surface;
+
+    assert(!vkCreateWaylandSurfaceKHR(_info->vk_instance, &vkcreateinfo, NULL, &window->vk_surface));
+
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base/shell expects a commit before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base/shell expects a commit before redrawing (/!\)]
     wl_surface_commit(window->surface);
 
-    // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base expects a configure event before redrawing (/!\)]
     wl_display_roundtrip(_info->display);
-
-    // 1) create a POSIX shared memory object (name must contain a single '/')
-    char* slash = strrchr(title, '/');
-    asprintf(&buffer->shm_id, "/%s", (slash ? slash + 1 : title));
-    buffer->shm_fd = shm_open(buffer->shm_id, O_CREAT|O_RDWR, 0600);
-    // allocate as much raw bytes as needed pixels in the file descriptor
-    assert(!ftruncate(buffer->shm_fd, width * height * 4));   // *4 = RGBA
-
-    // 2) expose it as a void* buffer, so our code can use 'memset()' directly
-    buffer->data = mmap(NULL, width * height * 4, PROT_READ|PROT_WRITE,
-                        MAP_SHARED, buffer->shm_fd, 0);
-    assert(buffer->data);
-
-    // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-    struct wl_shm_pool* shm_pool = wl_shm_create_pool(_info->shm, buffer->shm_fd,
-                                                      width * height * 4);
-    // and create the final 'wl_buffer' abstraction
-    buffer->buffer = wl_shm_pool_create_buffer(shm_pool, 0, width, height,
-		                               width * 4, WL_SHM_FORMAT_XRGB8888);
-    wl_shm_pool_destroy(shm_pool);
-
-    // set the initial raw buffer content, only White pixels (0xFF)
-    memset(buffer->data, 0xFF, width * height * 4);
-
-    // 4) attach our 'wl_buffer' to our 'wl_surface', and commit it
-    wl_surface_attach(window->surface, buffer->buffer, 0, 0);
-    wl_surface_damage(window->surface, 0, 0, width, height);
-    wl_surface_commit(window->surface);
 
     return window;
 }
 
+void redraw_window(InterfaceInfo* _info, Window* window)
+{ }
+
 void destroy_window(InterfaceInfo* _info, Window* window)
 {
-    Buffer* buffer = &window->buffer;
-
-    wl_buffer_destroy(buffer->buffer);
-
-    munmap(buffer->data, window->width * window->height * 4);
-
-    close(buffer->shm_fd);
-    shm_unlink(buffer->shm_id);
-    free(buffer->shm_id);
-
     destroy_shell_surface(_info, window->shell_surface);
+
+    vkDestroySurfaceKHR(_info->vk_instance, window->vk_surface, NULL);
 
     wl_surface_destroy(window->surface);
 
@@ -453,8 +475,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     InterfaceInfo* _info = data;
 
     if (!strcmp(name, "wl_compositor"))         { _info->compositor  = wl_registry_bind(registry, serial, &wl_compositor_interface, 1);
-    } else if (!strcmp(name, "wl_shm"))         { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
-    } else if (!strcmp(name, "wl_seat"))        { _info->seat        = wl_registry_bind(registry, serial, &wl_seat_interface, 1);
     } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
     } else if (!strcmp(name, "xdg_wm_base"))    { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
     } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
@@ -466,49 +486,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
 { }
-
-
-// WAYLAND SEAT CALLBACKS
-
-void wl_seat_handle_capabilities(void* data, struct wl_seat* seat, enum wl_seat_capability capabilities)
-{
-    InterfaceInfo* _info = data;
-
-    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
-        puts("Seats: keyboard discovered!");
-        _info->keyboard = wl_seat_get_keyboard(seat);
-    }
-    if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
-        puts("Seats: mouse discovered!");
-        _info->pointer = wl_seat_get_pointer(seat);
-    }
-    if (capabilities & WL_SEAT_CAPABILITY_TOUCH) {
-        puts("Seats: touchscreen discovered!");
-        _info->touch = wl_seat_get_touch(seat);
-    }
-}
-
-void wl_pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface,
-                             wl_fixed_t, wl_fixed_t)
-{ puts("Mouse enters window!"); }
-
-void wl_pointer_handle_leave(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface)
-{ puts("Mouse leaves window!"); }
-
-void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t serial, wl_fixed_t sx, wl_fixed_t sy)
-{ printf("Mouse moves at: %d:%d\n", wl_fixed_to_int(sx), wl_fixed_to_int(sy)); }
-
-void wl_pointer_handle_button(void* data, struct wl_pointer* pointer, uint32_t serial, uint32_t time,
-                              uint32_t button, uint32_t state)
-{
-  char* button_str = os_button_code_to_string(button);
-
-  switch (state) {
-    case WL_POINTER_BUTTON_STATE_RELEASED:  printf("Mouse button '%s' released!\n", button_str); return;
-    case WL_POINTER_BUTTON_STATE_PRESSED:   printf("Mouse button '%s' pressed!\n", button_str); return;
-    default:
-  }
-}
 
 
 // WAYLAND SHELL CALLBACKS

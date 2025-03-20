@@ -418,11 +418,16 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 
 void redraw_window(InterfaceInfo* _info, Window* window)
 {
+    static float color[3] = { 1.0, 1.0, 1.0 };   // =White (RGB)
+
     // these functions are common to OpenGL<->OpenGLES
     glViewport(0, 0, window->width, window->height);
-    glClearColor(1.0, 1.0, 1.0, 0.0);   // =White (RGBA)
+    glClearColor(color[0], color[1], color[2], 0.0);
     glClear(GL_COLOR_BUFFER_BIT);
     eglSwapBuffers(_info->egl_display, window->egl_surface);
+
+    for (int c = 0; c < sizeof(color); c++) {
+        color[c] = (color[c] <= 0.0) ? 1.0 : color[c] - 0.01; }
 }
 
 void destroy_window(InterfaceInfo* _info, Window* window)

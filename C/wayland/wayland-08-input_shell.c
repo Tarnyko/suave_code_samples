@@ -247,10 +247,10 @@ int main(int argc, char* argv[])
 
     // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
     wl_display_roundtrip(display);
+    assert(_info.compositor);
 
     // now this should have been filled by the registry callbacks
     printf("Compositor is: ");
-    assert(_info.compositor);
     switch (_info.compositorId)
     {
         case E_WESTON : printf("Weston.\n\n");     break;
