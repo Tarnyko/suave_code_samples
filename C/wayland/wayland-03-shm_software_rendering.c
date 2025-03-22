@@ -312,7 +312,6 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
       case E_WL_SHELL:    return wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
       case E_XDG_WM_BASE: return xdg_surface_destroy((struct xdg_surface*) shell_surface);
       case E_XDG_SHELL:   return zxdg_surface_v6_destroy((struct zxdg_surface_v6*) shell_surface);
-      default:
     }
 }
 

@@ -407,7 +407,6 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
       case E_WL_SHELL:    return wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
       case E_XDG_WM_BASE: return xdg_toplevel_destroy((struct xdg_toplevel*) shell_surface);
       case E_XDG_SHELL:   return zxdg_toplevel_v6_destroy((struct zxdg_toplevel_v6*) shell_surface);
-      default:            return;
     }
 }
 
@@ -648,7 +647,7 @@ void wl_seat_handle_capabilities(void* data, struct wl_seat* seat, enum wl_seat_
 }
 
 void wl_pointer_handle_enter(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface,
-                             wl_fixed_t, wl_fixed_t)
+                             wl_fixed_t sx, wl_fixed_t sy)
 { puts("Mouse enters window!"); }
 
 void wl_pointer_handle_leave(void* data, struct wl_pointer* pointer, uint32_t serial, struct wl_surface* surface)

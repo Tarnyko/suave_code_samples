@@ -46,10 +46,10 @@ wayland-02-list_interfaces-opengl_vulkan: wayland-02-list_interfaces-opengl_vulk
 	${CC} $(CFLAGS) $< -o $@ `$(PKGCONFIG_CMD) $(PKGCONFIG_LIB_OPENGL) ${PKGCONFIG_LIB_VULKAN}`
 
 wayland-03-shm_software_rendering: wayland-03-shm_software_rendering.c
-	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)`
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
 
 wayland-04-shm_software_rendering-redraw: wayland-04-shm_software_rendering-redraw.c
-	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)`
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
 
 wayland-05-accelerated_rendering-opengl: wayland-05-accelerated_rendering-opengl.c
 	${CC} $(CFLAGS) $(protocol_deps)  $< -o $@ `$(PKGCONFIG_CMD) $(PKGCONFIG_LIB_OPENGL)`
@@ -58,11 +58,11 @@ wayland-06-accelerated_rendering-vulkan: wayland-06-accelerated_rendering-vulkan
 	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD) $(PKGCONFIG_LIB_VULKAN)`
 
 wayland-07-input: wayland-07-input.c
-	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)`
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
 
 wayland-08-input_shell: wayland-08-input_shell.c
-	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)`
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
 
 wayland-09-drag_and_drop: wayland-09-drag_and_drop.c
-	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)`
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
 
