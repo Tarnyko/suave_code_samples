@@ -255,17 +255,17 @@ int main(int argc, char* argv[])
 
 char* elect_shell(InterfaceInfo* _info)
 {
-    // deprecated but easy-to-use; for old compositors
-    if (_info->wl_shell) {
-        _info->shell   = _info->wl_shell;
-        _info->shellId = E_WL_SHELL;
-        return "wl_shell";
     // stable
-    } else if (_info->xdg_wm_base) {
+    if (_info->xdg_wm_base) {
         _info->shell   = _info->xdg_wm_base;
         _info->shellId = E_XDG_WM_BASE;
         xdg_wm_base_add_listener(_info->xdg_wm_base, &xdg_wm_base_listener, NULL);
         return "xdg_wm_base";
+    // deprecated but easy-to-use; for old compositors
+    } else if (_info->wl_shell) {
+        _info->shell   = _info->wl_shell;
+        _info->shellId = E_WL_SHELL;
+        return "wl_shell";
     // former unstable version of 'xdg_wm_base'
     } else if (_info->xdg_shell) {
         _info->shell   = _info->xdg_shell;

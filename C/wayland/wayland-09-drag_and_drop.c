@@ -378,7 +378,7 @@ char* elect_shell(InterfaceInfo* _info)
         _info->shellId = E_XDG_WM_BASE;
         xdg_wm_base_add_listener(_info->xdg_wm_base, &xdg_wm_base_listener, NULL);
         return "xdg_wm_base";
-    // deprecated stable but easy-to-use; for old compositors
+    // deprecated but easy-to-use; for old compositors
     } else if (_info->wl_shell) {
         _info->shell   = _info->wl_shell;
         _info->shellId = E_WL_SHELL;
