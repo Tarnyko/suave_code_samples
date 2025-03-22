@@ -16,11 +16,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Prerequisites (Debian/Ubuntu):
-// $ sudo apt install libwayland-dev
+/*  Prerequisites:
+ - Debian/Ubuntu: $ sudo apt install libwayland-dev libvulkan-dev
+ - Fedora/RHEL:   $ sudo dnf install wayland-devel vulkan-loader-devel
 
-//  Compile with:
-// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client vulkan`
+    Compile with:
+ $ gcc ... `pkg-config --cflags --libs wayland-client vulkan`
+*/
 
 #include <assert.h>
 #include <stdio.h>
@@ -367,9 +369,8 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
     // Check if instance supports Wayland
 
     uint32_t vkext_count = 0;
-
-    if (vkEnumerateInstanceExtensionProperties(NULL, &vkext_count, NULL)
-          || vkext_count == 0) {
+    assert(!vkEnumerateInstanceExtensionProperties(NULL, &vkext_count, NULL));
+    if (vkext_count == 0) {
         return; }
 
     bool instance_has_wayland = false;
@@ -378,9 +379,7 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
     vkEnumerateInstanceExtensionProperties(NULL, &vkext_count, vkexts);
     for (uint32_t c = 0; c < vkext_count; c++) {
         if (!strcmp(vkexts[c].extensionName, "VK_KHR_wayland_surface")) {
-            instance_has_wayland = true;
-            break;
-        }
+            instance_has_wayland = true; }
     }
     free(vkexts);
 
@@ -414,13 +413,11 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
     // Enumerate GPUs...
 
     uint32_t vkgpu_count = 0;
-
-    vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL);
+    assert(!vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL));
     if (vkgpu_count == 0) {
        vkDestroyInstance(vk_instance, NULL);
        return;
     }
-
     printf("[GPUs:%d", vkgpu_count);
 
     // ...and choose a valid one
@@ -441,6 +438,7 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
             _info->gpu.name = strdup(vkgpu_props.deviceName); }
     }
     free(vkgpus);
+
     printf("]\n\n");
 
     if (!_info->gpu.name) {
@@ -459,9 +457,8 @@ bool elect_vulkan_gpu(InterfaceInfo* _info, VkInstance vk_instance, VkPhysicalDe
     // Check if GPU supports the 'swapchain' extension
 
     uint32_t vkgpuext_count = 0;
-
-    if (vkEnumerateDeviceExtensionProperties(vk_gpu, NULL, &vkgpuext_count, NULL)
-          || vkgpuext_count == 0) {
+    assert(!vkEnumerateDeviceExtensionProperties(vk_gpu, NULL, &vkgpuext_count, NULL));
+    if (vkgpuext_count == 0) {
         return false; }
 
     bool gpu_has_swapchain = false;
@@ -470,9 +467,7 @@ bool elect_vulkan_gpu(InterfaceInfo* _info, VkInstance vk_instance, VkPhysicalDe
     vkEnumerateDeviceExtensionProperties(vk_gpu, NULL, &vkgpuext_count, vkgpuexts);
     for (uint32_t c = 0; c < vkgpuext_count; c++) {
         if (!strcmp(vkgpuexts[c].extensionName, "VK_KHR_swapchain")) {
-            gpu_has_swapchain = true;
-            break;
-        }
+            gpu_has_swapchain = true; }
     }
     free(vkgpuexts);
 
@@ -482,7 +477,6 @@ bool elect_vulkan_gpu(InterfaceInfo* _info, VkInstance vk_instance, VkPhysicalDe
     // Check if the GPU has a queue with both 'graphics' and 'present' capabilities...
 
     uint32_t vkqueue_count = 0;
-
     vkGetPhysicalDeviceQueueFamilyProperties(vk_gpu, &vkqueue_count, NULL);
     if (vkqueue_count == 0) {
         return false; }
@@ -667,10 +661,18 @@ bool initialize_vulkan_renderpass(InterfaceInfo* _info, VkSurfaceKHR vk_surface,
     if (vkCreateSwapchainKHR(_info->gpu.vk_device, &swapinfo, NULL, &vk_swapchain)) {
 	    return false; }
 
-    // Pre-create the imageviews that the swapchain will use:
+    // Inspect the images that the swapchain needs, display memory requirements
 
     vkGetSwapchainImagesKHR(_info->gpu.vk_device, vk_swapchain, &swap_imgcount, NULL);
+
     printf("Number of images per swapchain: %d ", swap_imgcount);
+
+    VkImage* swapimages = calloc(swap_imgcount, sizeof(VkImage));
+    vkGetSwapchainImagesKHR(_info->gpu.vk_device, vk_swapchain, &swap_imgcount, swapimages);
+
+    VkMemoryRequirements mem_reqs;
+    vkGetImageMemoryRequirements(_info->gpu.vk_device, swapimages[0], &mem_reqs);
+    printf("(*%zd = %zd bytes)\n", mem_reqs.size, swap_imgcount * mem_reqs.size);
 
     // 1) create a view for each of the swapchain's 'color' images...
 
@@ -690,27 +692,13 @@ bool initialize_vulkan_renderpass(InterfaceInfo* _info, VkSurfaceKHR vk_surface,
     };
 
     VkImageView* vk_views = calloc(swap_imgcount, sizeof(VkImageView));
-
-    VkImage* swapimages = calloc(swap_imgcount, sizeof(VkImage));
-    vkGetSwapchainImagesKHR(_info->gpu.vk_device, vk_swapchain, &swap_imgcount, swapimages);
-
-    VkMemoryRequirements mem_reqs;
-    vkGetImageMemoryRequirements(_info->gpu.vk_device, swapimages[0], &mem_reqs);
-    printf("(*%zd = %zd bytes)\n", mem_reqs.size, swap_imgcount * mem_reqs.size);
-
     for (uint32_t c = 0; c < swap_imgcount; c++) {
         viewinfo.image = swapimages[c];
-
-        if (vkCreateImageView(_info->gpu.vk_device, &viewinfo, NULL, &vk_views[c])) {
-            free(swapimages);
-            free(vk_views);
-            vkDestroySwapchainKHR(_info->gpu.vk_device, vk_swapchain, NULL);
-            return false;
-        }
+        assert(!vkCreateImageView(_info->gpu.vk_device, &viewinfo, NULL, &vk_views[c]));
     }
     free(swapimages);
 
-    // Normally we'd then prepare more images/views for 2) depth 3) textures...
+    // Normally we'd prepare more images/views for: 2) depth 3) textures...
 
     // 4) Create the renderpass
 
@@ -915,12 +903,9 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     assert(!vkCreateWaylandSurfaceKHR(_info->vk_instance, &vkcreateinfo, NULL, &window->vk_surface));
 
     if (!initialize_vulkan_renderpass(_info, window->vk_surface, &window->width,
-                                                                 &window->height)) {
-        fprintf(stderr, "Could not create Vulkan framebuffers");
-        return NULL;
-    }
-    if (!initialize_vulkan_pipeline(_info, _info->gpu.vk_renderpass)) {
-        fprintf(stderr, "Could not create Vulkan pipeline!");
+                                                                 &window->height)
+        || !initialize_vulkan_pipeline(_info, _info->gpu.vk_renderpass)) {
+        fprintf(stderr, "Could not initialize Vulkan renderpass or pipeline!");
         return NULL;
     }
 
@@ -940,12 +925,14 @@ bool redraw_window(InterfaceInfo* _info, Window* window)
 {
     Gpu* gpu = &_info->gpu;
 
-    VkClearValue clear[1];             // redraw to White
-    clear[0].color.float32[0] = 1.0;   // R
-    clear[0].color.float32[1] = 1.0;   // G
-    clear[0].color.float32[2] = 1.0;   // B
-    clear[0].color.float32[3] = 0.0;   // A
+    static VkClearValue clear = {0};
 
+    // increment R,G,B by 0.01 each iteration
+    float* float32 = clear.color.float32;
+    for (int c = 0; c < 3; c++) {
+        float32[c] = (float32[c] < 1.0) ? float32[c] + 0.01 : 0.0; }
+
+    // the semaphore will safeguard the next commands
     VkSemaphoreCreateInfo seminfo = {0};
     seminfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -965,7 +952,7 @@ bool redraw_window(InterfaceInfo* _info, Window* window)
         .renderArea.extent.width  = window->width,
         .renderArea.extent.height = window->height,
         .clearValueCount          = 1,   // only 'color'
-        .pClearValues             = clear
+        .pClearValues             = &clear
     };
 
     // add a draw command to the command buffer
@@ -978,7 +965,7 @@ bool redraw_window(InterfaceInfo* _info, Window* window)
     // lock the command buffer
     vkEndCommandBuffer(gpu->vk_cmdbuffer);
 
-    // use a semaphore + fence to secure the rendering
+    // use the semaphore + a fence to secure the rendering
     VkFenceCreateInfo fenceinfo = {0};
     fenceinfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 
@@ -1010,7 +997,7 @@ bool redraw_window(InterfaceInfo* _info, Window* window)
     // wait until the state is ready
     VkResult res;
     do { res = vkWaitForFences(gpu->vk_device, 1, &fence, VK_TRUE, 1000000000);
-       } while (res == VK_TIMEOUT);
+    } while (res == VK_TIMEOUT);
 
     // present the image into the window!
     vkQueuePresentKHR(gpu->vk_queue, &presentinfo);

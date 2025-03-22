@@ -16,11 +16,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Prerequisites (Debian/Ubuntu):
-// $ sudo apt install libwayland-dev
+/*  Prerequisites:
+ - Debian/Ubuntu: $ sudo apt install libwayland-dev libegl-dev libgles-dev
+ - Fedora/RHEL:   $ sudo dnf install wayland-devel libglvnd-devel
 
-//  Compile with:
-// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client wayland-egl egl glesv2`
+    Compile with:
+ $ gcc ... `pkg-config --cflags --libs wayland-client wayland-egl egl glesv2`
+*/
 
 #include <assert.h>
 #include <stdio.h>

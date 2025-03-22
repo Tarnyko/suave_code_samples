@@ -16,11 +16,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Prerequisites (Debian/Ubuntu):
-// $ sudo apt install libwayland-dev
+/*  Prerequisites:
+ - Debian/Ubuntu: $ sudo apt install libwayland-dev
+ - Fedora/RHEL:   $ sudo dnf install wayland-devel
 
-//  Compile with:
-// $ gcc ... _deps/*.c `pkg-config --cflags --libs wayland-client`
+    Compile with:
+ $ gcc ... `pkg-config --cflags --libs wayland-client`
+*/
 
 #define _GNU_SOURCE      // for "asprintf()"
 #include <assert.h>

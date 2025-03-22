@@ -1,0 +1,65 @@
+Simple (but accurate) sample Wayland clients.
+
+
+PREREQUISITES
+-------------
+
+ * Debian/Ubuntu:
+   *************
+   $ sudo apt install libwayland-dev libegl-dev libgles-dev libvulkan-dev
+
+ * Fedora/RHEL:
+   ***********
+   $ sudo dnf install wayland-devel libglvnd-devel vulkan-loader-devel
+
+
+BUILDING
+--------
+  $ make
+   or
+  $ DEBUG=1 make
+
+  $ make clean
+
+
+LIST
+----
+
+ * wayland-01-list_interfaces:
+ Lists the current Wayland compositor's supported interfaces.
+
+ * wayland-02-list_interfaces-opengl_vulkan:
+ Lists the current Wayland compositor's supported interfaces,
+EGL/OpenGL(ES) & Vulkan versions.
+
+ * wayland-03-shm_software_rendering:
+ Displays a white square in Software mode.
+
+ * wayland-04-shm_software_rendering-redraw :
+ Displays a white square in Software mode, that slowly overwrites
+itself with colored artefacts (using Wayland's internal 'callback'
+mechanism for quickest-possible redraw in Software mode).
+
+ * wayland-05-accelerated_rendering-opengl :
+ Displays a white square in EGL/OpenGL mode, that quickly blinks
+from White to Black -and forth. OpenGL ES is used is possible,
+otherwise desktop OpenGL.
+
+ * wayland-06-accelerated_rendering-vulkan :
+ Displays a white square in Vulkan mode, that quickly blinks from
+Black to White -and forth.
+
+ * wayland-07-input :
+ Displays a white square in Software mode, showing logs about
+mouse position & button-clicks in the terminal.
+ 
+ * wayland-08-input_shell :
+ Displays a window with a hand-drawn titlebar in Software mode,
+showing logs about mouse position & button-clicks in the terminal,
+AND having basic window management (aka "shell") capabilities:
+move, maximize, un-maximize, minimize.
+ 
+ * wayland-09-drag_and_drop :
+ (Same as above, but) with a gray square that follows the mouse,
+and the abilitiy to "drag & drop" it from the window to another
+-such as 'weston-terminal'- to display a dynamic message.

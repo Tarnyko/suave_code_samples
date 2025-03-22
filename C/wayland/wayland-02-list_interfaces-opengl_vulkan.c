@@ -16,11 +16,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Prerequisites (Debian/Ubuntu):
-// $ sudo apt install libwayland-dev libegl-dev libgles-dev libvulkan-dev
+/*  Prerequisites:
+ - Debian/Ubuntu: $ sudo apt install libwayland-dev libegl-dev libgles-dev libvulkan-dev
+ - Fedora/RHEL:   $ sudo dnf install wayland-devel libglvnd-devel vulkan-loader-devel
 
-//  Compile with:
-// $ gcc ... `pkg-config --cflags --libs wayland-client wayland-egl egl glesv2 vulkan`
+    Compile with:
+ $ gcc ... `pkg-config --cflags --libs wayland-client wayland-egl egl glesv2 vulkan`
+*/
 
 #include <assert.h>
 #include <stdio.h>
