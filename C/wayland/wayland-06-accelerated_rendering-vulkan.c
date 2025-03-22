@@ -79,6 +79,7 @@ typedef struct {
     VkDescriptorPool      vk_descpool;     // All this state used at
     VkDescriptorSetLayout vk_desclayout;   // draw time, with 'vk_desc'
     VkDescriptorSet       vk_desc;         // as the main entry point.
+    VkSampler             vk_sampler;
     VkPipelineLayout      vk_layout;
     VkPipeline            vk_pipeline;     // Shaders live there
 
@@ -229,7 +230,7 @@ int main(int argc, char* argv[])
     // check & initiliaze Vulkan
     initialize_vulkan(&_info, argv[0]);
     if (!_info.has_vulkan) {
-        fprintf(stderr, "No compatible Vulkan implementation found! Exiting...\n");
+        fprintf(stderr, "No viable Vulkan implementation found! Exiting...\n");
         goto error;
     }
 
@@ -265,6 +266,7 @@ int main(int argc, char* argv[])
         vkDestroyPipelineLayout(gpu->vk_device, gpu->vk_layout, NULL);
         vkDestroyDescriptorPool(gpu->vk_device, gpu->vk_descpool, NULL);
         vkDestroyDescriptorSetLayout(gpu->vk_device, gpu->vk_desclayout, NULL);
+        vkDestroySampler(gpu->vk_device, gpu->vk_sampler, NULL);
         vkDestroyRenderPass(gpu->vk_device, gpu->vk_renderpass, NULL);
         vkDestroySwapchainKHR(gpu->vk_device, gpu->vk_swapchain, NULL);
         vkFreeCommandBuffers(gpu->vk_device, gpu->vk_cmdpool, 1, &gpu->vk_cmdbuffer);
@@ -412,8 +414,9 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
     // Enumerate GPUs...
 
     uint32_t vkgpu_count = 0;
-    assert(!vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL));
-    if (vkgpu_count == 0) {
+    if (vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL) ||
+          vkgpu_count == 0) {
+       fprintf(stderr, "No driver for any physical GPU found!\n");
        vkDestroyInstance(vk_instance, NULL);
        return;
     }
@@ -510,9 +513,9 @@ bool elect_vulkan_gpu(InterfaceInfo* _info, VkInstance vk_instance, VkPhysicalDe
     vkGetPhysicalDeviceSurfaceFormatsKHR(vk_gpu, vk_surface, &vkformat_count, vkformats);
     for (uint32_t c = 0; c < vkformat_count; c++) {
         vk_format     = vkformats[c].format;
-	vk_colorspace = vkformats[c].colorSpace;
+        vk_colorspace = vkformats[c].colorSpace;
 
-	if (vk_format == VK_FORMAT_R8G8B8A8_UNORM) {
+        if (vk_format == VK_FORMAT_R8G8B8A8_UNORM) {
             break; }
     }
     free(vkformats);
@@ -528,11 +531,11 @@ bool elect_vulkan_gpu(InterfaceInfo* _info, VkInstance vk_instance, VkPhysicalDe
     VkQueueFamilyProperties* vkqueue_props = calloc(vkqueue_count, sizeof(VkQueueFamilyProperties));
     vkGetPhysicalDeviceQueueFamilyProperties (vk_gpu, &vkqueue_count, vkqueue_props);
     for (uint32_t c = 0; c < vkqueue_count; c++) {
-	if ((vkqueue_props[c].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+        if ((vkqueue_props[c].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
               !vkGetPhysicalDeviceSurfaceSupportKHR(vk_gpu, c, vk_surface, &queue_has_present) &&
-	        queue_has_present) {
-	    queue_index = c;
-	    break;
+                queue_has_present) {
+            queue_index = c;
+            break;
         }
     }
     free(vkqueue_props);
@@ -620,10 +623,10 @@ bool initialize_vulkan_renderpass(InterfaceInfo* _info, VkSurfaceKHR vk_surface,
     VkExtent2D swap_extent;
     if (surfcaps.currentExtent.width == -1 || surfcaps.currentExtent.width == -1) {
         swap_extent.width  = *width;
-	swap_extent.height = *height;
+        swap_extent.height = *height;
     } else {
         swap_extent = surfcaps.currentExtent;
-	printf("We are required to use window size: %dx%d\n", swap_extent.width, swap_extent.height);
+        printf("We are required to use window size: %dx%d\n", swap_extent.width, swap_extent.height);
     }
 
     // How many images does the GPU want per swapchain?
@@ -706,7 +709,7 @@ bool initialize_vulkan_renderpass(InterfaceInfo* _info, VkSurfaceKHR vk_surface,
         .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 1,    // only 1 'color' attachment
         .pAttachments    = (VkAttachmentDescription[]) {
-		               { .format         = swapinfo.imageFormat,
+                               { .format         = swapinfo.imageFormat,
                                  .samples        = VK_SAMPLE_COUNT_1_BIT,
                                  .loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR,
                                  .storeOp        = VK_ATTACHMENT_STORE_OP_STORE,
@@ -778,13 +781,29 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
 
     // layout with mandatory sampler
 
+    VkSamplerCreateInfo samplerinfo = {0};
+    samplerinfo = (VkSamplerCreateInfo) {
+        .sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter    = VK_FILTER_NEAREST,
+        .minFilter    = VK_FILTER_NEAREST,
+        .mipmapMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .borderColor  = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+    };
+
     VkSampler vk_sampler;
+    if (vkCreateSampler(_info->gpu.vk_device, &samplerinfo, NULL, &vk_sampler)) {
+        vkDestroyPipelineCache(_info->gpu.vk_device, vk_cache, NULL);
+        return false;
+    }
 
     VkDescriptorSetLayoutCreateInfo desclayoutinfo = {0};
     desclayoutinfo = (VkDescriptorSetLayoutCreateInfo) {
         .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .bindingCount = 1,
-	.pBindings    = (VkDescriptorSetLayoutBinding[]) {
+        .pBindings    = (VkDescriptorSetLayoutBinding[]) {
                             { .binding            = 0,
                               .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                               .descriptorCount    = 1,
@@ -795,7 +814,8 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
 
     VkDescriptorSetLayout vk_desclayout;
     if (vkCreateDescriptorSetLayout(_info->gpu.vk_device, &desclayoutinfo, NULL, &vk_desclayout)) {
-	vkDestroyPipelineCache(_info->gpu.vk_device, vk_cache, NULL);
+        vkDestroySampler(_info->gpu.vk_device, vk_sampler, NULL);
+        vkDestroyPipelineCache(_info->gpu.vk_device, vk_cache, NULL);
         return false;
     }
 
@@ -808,8 +828,9 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
 
     VkPipelineLayout vk_layout;
     if (vkCreatePipelineLayout(_info->gpu.vk_device, &layoutinfo, NULL, &vk_layout)) {
-	vkDestroyDescriptorSetLayout(_info->gpu.vk_device, vk_desclayout, NULL);
-	vkDestroyPipelineCache(_info->gpu.vk_device, vk_cache, NULL);
+        vkDestroyDescriptorSetLayout(_info->gpu.vk_device, vk_desclayout, NULL);
+        vkDestroySampler(_info->gpu.vk_device, vk_sampler, NULL);
+        vkDestroyPipelineCache(_info->gpu.vk_device, vk_cache, NULL);
         return false;
     }
 
@@ -858,9 +879,9 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
         .pSetLayouts        = &vk_desclayout
     };
 
-
     VkDescriptorSet vk_desc;
     vkAllocateDescriptorSets(_info->gpu.vk_device, &descinfo, &vk_desc);
+
     VkWriteDescriptorSet descwrite = {0};
     descwrite = (VkWriteDescriptorSet) {
         .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -872,12 +893,13 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
                                  .imageView   = _info->gpu.vk_views[0] }
                            }
     };
-    vkUpdateDescriptorSets(_info->gpu.vk_device, 1, &descwrite, 0, NULL);
+    vkUpdateDescriptorSets(_info->gpu.vk_device, 0, &descwrite, 0, NULL);
 
     _info->gpu.vk_desclayout = vk_desclayout;
     _info->gpu.vk_descpool   = vk_descpool;
     _info->gpu.vk_desc       = vk_desc;
 
+    _info->gpu.vk_sampler  = vk_sampler;
     _info->gpu.vk_layout   = vk_layout;
     _info->gpu.vk_pipeline = vk_pipeline;
 
@@ -901,8 +923,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     vkcreateinfo.surface = window->surface;
     assert(!vkCreateWaylandSurfaceKHR(_info->vk_instance, &vkcreateinfo, NULL, &window->vk_surface));
 
-    if (!initialize_vulkan_renderpass(_info, window->vk_surface, &window->width,
-                                                                 &window->height)
+    if (!initialize_vulkan_renderpass(_info, window->vk_surface, &window->width, &window->height)
         || !initialize_vulkan_pipeline(_info, _info->gpu.vk_renderpass)) {
         fprintf(stderr, "Could not initialize Vulkan renderpass or pipeline!");
         return NULL;
@@ -975,11 +996,11 @@ bool redraw_window(InterfaceInfo* _info, Window* window)
     submitinfo = (VkSubmitInfo) {
         .sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pWaitDstStageMask  = (VkPipelineStageFlags[]) {
-		                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
+             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
         .waitSemaphoreCount = 1,
         .pWaitSemaphores    = &sem,
-	.commandBufferCount = 1,
-	.pCommandBuffers    = &gpu->vk_cmdbuffer
+        .commandBufferCount = 1,
+        .pCommandBuffers    = &gpu->vk_cmdbuffer
     };
 
     // queue the command buffer content for execution
