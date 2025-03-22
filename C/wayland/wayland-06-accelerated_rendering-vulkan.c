@@ -229,7 +229,7 @@ int main(int argc, char* argv[])
     // check & initiliaze Vulkan
     initialize_vulkan(&_info, argv[0]);
     if (!_info.has_vulkan) {
-        fprintf(stderr, "No compatible Vulkan implementation found! Exiting...\n");
+        fprintf(stderr, "No viable Vulkan implementation found! Exiting...\n");
         goto error;
     }
 
@@ -412,8 +412,9 @@ void initialize_vulkan(InterfaceInfo* _info, char* arg)
     // Enumerate GPUs...
 
     uint32_t vkgpu_count = 0;
-    assert(!vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL));
-    if (vkgpu_count == 0) {
+    if (vkEnumeratePhysicalDevices(vk_instance, &vkgpu_count, NULL) ||
+          vkgpu_count == 0) {
+       fprintf(stderr, "No driver for any physical GPU found!\n");
        vkDestroyInstance(vk_instance, NULL);
        return;
     }
@@ -872,7 +873,7 @@ bool initialize_vulkan_pipeline(InterfaceInfo* _info, VkRenderPass vk_renderpass
                                  .imageView   = _info->gpu.vk_views[0] }
                            }
     };
-    vkUpdateDescriptorSets(_info->gpu.vk_device, 1, &descwrite, 0, NULL);
+    //vkUpdateDescriptorSets(_info->gpu.vk_device, 1, &descwrite, 0, NULL);
 
     _info->gpu.vk_desclayout = vk_desclayout;
     _info->gpu.vk_descpool   = vk_descpool;
