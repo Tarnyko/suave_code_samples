@@ -178,7 +178,6 @@ int main(int argc, char* argv[])
     // attach an asynchronous callback struct (=list) with an '_info' object itself attached
     InterfaceInfo _info = {0};
     _info.display = display;
-    _info.decor   = libdecor_new(display, &libdecor_interface);
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
     // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
@@ -269,6 +268,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->surface = wl_compositor_create_surface(_info->compositor);
     assert(window->surface);
 
+    _info->decor = libdecor_new(_info->display, &libdecor_interface);
     window->frame = libdecor_decorate(_info->decor, window->surface,
                                       &libdecor_frame_interface, _info);
     assert(window->frame);
@@ -290,7 +290,7 @@ void destroy_window(InterfaceInfo* _info, Window* window)
 {
     destroy_window_buffer(_info, window);
 
-    libdecor_frame_unref(window->frame);
+    libdecor_frame_close(window->frame);
 
     wl_surface_destroy(window->surface);
 
@@ -450,8 +450,8 @@ void decor_frame_configure(struct libdecor_frame* frame, struct libdecor_configu
   enum libdecor_window_state stateId = window->stateId;
 
   if (libdecor_configuration_get_content_size(configuration, frame, &width, &height)) {
-      window->width  = (width > 0)  ? width  : window->width;
-      window->height = (height > 0) ? height : window->height;
+      width  = (width > 0)  ? width  : window->width;
+      height = (height > 0) ? height : window->height;
   }
 
   if (libdecor_configuration_get_window_state(configuration, &stateId)) {
