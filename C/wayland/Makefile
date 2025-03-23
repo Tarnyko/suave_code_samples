@@ -7,6 +7,7 @@ SANITIZE_FLAGS := -fsanitize=undefined,address,bounds
 PKGCONFIG_CMD         := pkg-config --cflags --libs wayland-client
 PKGCONFIG_LIB_OPENGL  := wayland-egl egl glesv2
 PKGCONFIG_LIB_VULKAN  := vulkan
+PKGCONFIG_LIB_DECOR   := libdecor-0
 
 ifdef DEBUG
 	CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
@@ -22,6 +23,11 @@ filenames := wayland-01-list_interfaces \
              wayland-07-input \
              wayland-08-input_shell \
              wayland-09-drag_and_drop
+
+ifdef DECOR
+             filenames := $(filenames)\
+             wayland-08bis-input_shell-libdecor
+endif
 
 files := $(strip $(foreach f,$(filenames),$(wildcard $(f))))
 
@@ -62,6 +68,9 @@ wayland-07-input: wayland-07-input.c
 
 wayland-08-input_shell: wayland-08-input_shell.c
 	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt
+
+wayland-08bis-input_shell-libdecor: wayland-08bis-input_shell-libdecor.c
+	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD) $(PKGCONFIG_LIB_DECOR)` -lrt
 
 wayland-09-drag_and_drop: wayland-09-drag_and_drop.c
 	${CC} $(CFLAGS) $(protocol_deps) $< -o $@ `$(PKGCONFIG_CMD)` -lrt

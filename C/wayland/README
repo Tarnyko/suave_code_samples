@@ -59,6 +59,13 @@ showing logs about mouse position & button-clicks in the terminal,
 AND having basic window management (aka "shell") capabilities:
 move, maximize, un-maximize, minimize.
  
+ * wayland-08bis-input_shell-libdecor [OPTIONAL] :
+ (Same as above, but) uses the popular "libdecor" library to
+wrap and remove complicated shell code.
+ [ INSTALL AND BUILD WITH:
+  $ sudo apt install libdecor-0-dev
+  $ DECOR=1 make ]
+
  * wayland-09-drag_and_drop :
  (Same as above, but) with a gray square that follows the mouse,
 and the abilitiy to "drag & drop" it from the window to another
