@@ -1,5 +1,5 @@
 ﻿/*
-* socket_keepalive_client.c
+* socket_tcp_client.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify

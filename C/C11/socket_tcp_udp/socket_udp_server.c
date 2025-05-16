@@ -1,5 +1,5 @@
 ﻿/*
-* socket_keepalive_server.c
+* socket_udp_server.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -18,9 +18,8 @@
 
 /*  Compile with:
  - Linux (glibc>=2.31): gcc -std=c11 -D_DEFAULT_SOURCE ...
- - Linux (older):       gcc -std=c11 -D_BSD_SOURCE -DHAVE_TIMESPEC_GET ...
- - Windows (MinGW>=14): gcc -std=c11 -D_UCRT ... -lws2_32 -lucrt
- - Windows (older):     gcc -std=c11 ... -lws2_32
+ - Linux (older):       gcc -std=c11 -D_BSD_SOURCE ...
+ - Windows:             gcc -std=c11 ... -lws2_32
 */
 
 
@@ -30,7 +29,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
-#include <time.h>   // for "timespec" [C11]
 
 #ifdef _WIN32
 #  include <winsock2.h>
@@ -72,8 +70,7 @@ void deinit_os_sockets()
 static void close_sockets(int)
 {
     if (_client) {
-       free(_client);
-    }
+        free(_client); }
     if (_socket != SOCKET_ERROR) {
         shutdown(_socket, SHUT_RDWR);
         close(_socket);
@@ -83,68 +80,39 @@ static void close_sockets(int)
 }
 
 
-bool bind_socket_to(const int socket, const char* ip, const unsigned short port)
+bool bind_socket_to(const int socket, const unsigned short port)
 {
     struct sockaddr_in server = {0};
     server = (struct sockaddr_in) { .sin_family      = AF_INET,
-                                    .sin_addr.s_addr = inet_addr(ip),
+                                    .sin_addr.s_addr = htonl(INADDR_ANY),
                                     .sin_port        = htons(port) };
 
     return bind(socket, (struct sockaddr*)&server, sizeof(struct sockaddr)) != SOCKET_ERROR;
 }
 
 
-struct sockaddr_in* wait_for_client(const int socket, int* queue)
+void display_client_message(const struct sockaddr_in* client, const char* msg)
 {
-    struct sockaddr_in* client = calloc(1, sizeof(struct sockaddr_in));
+    printf("Client (IP: %s, port: %hu) sent message: %s",
+           inet_ntoa(client->sin_addr), ntohs(client->sin_port), msg);
+}
 
-    while (*queue == SOCKET_ERROR) {
-        *queue = accept(socket, (struct sockaddr*)client, &(socklen_t){sizeof(struct sockaddr)});
+void display_client_messages(const int socket, struct sockaddr_in** client)
+{
+    *client = calloc(1, sizeof(struct sockaddr_in));
+    char msg_buffer[16] = {0};
+    int queue;
+
+    while (true) {
+        queue = recvfrom(socket, msg_buffer, sizeof(msg_buffer), 0,
+                         (struct sockaddr*)*client, &(socklen_t){sizeof(struct sockaddr)});
+        if (queue > 0) {
+            display_client_message(*client, msg_buffer); }
         SLEEP(1000);
     }
-    return client;
-}
 
-
-void display_client(const struct sockaddr_in* client)
-{
-    printf("Client connected! (IP: %s, port: %hu)\n",
-           inet_ntoa(client->sin_addr), ntohs(client->sin_port));
-}
-
-
-void display_client_queue_timeout(const int queue, const int timeout)
-{
-    ssize_t msg_size = 1;
-    char msg_buffer[16] = {0};
-
-    struct timespec prev_time, curr_time = {0};
-    timespec_get(&prev_time, TIME_UTC);
-
-    while (msg_size != 0) {
-        msg_size = recv(queue, msg_buffer, sizeof(msg_buffer), 0);
-        if (msg_size > 0) {
-            printf("- Read %zd bytes: %s", msg_size, msg_buffer);
-            fflush(stdout);
-            memset(msg_buffer, 0, sizeof(msg_buffer));
-            continue;
-        }
-
-        // nothing received...
-        // "keepalive": after timeout, send a reply to check client is alive
-        timespec_get(&curr_time, TIME_UTC);
-        if (curr_time.tv_sec - prev_time.tv_sec > timeout) {
-            if (send(queue, &(const char){0}, 1, 0) == SOCKET_ERROR) {
-                    printf("\nClient died!\n\n");
-                    return;
-            }
-            timespec_get(&prev_time, TIME_UTC);
-        }
-
-        SLEEP(500);
-    }
-
-    printf("\nClient disconnected.\n\n");
+    free(*client);
+    *client = NULL;
 }
 
 
@@ -157,7 +125,7 @@ int main (int argc, char *argv[])
         goto err;
     }
 
-    if ((_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) == SOCKET_ERROR) {
+    if ((_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR) {
         error = "Could not create socket";
         goto err;
     }
@@ -173,22 +141,16 @@ int main (int argc, char *argv[])
         goto err;
     }
 
-    if (!bind_socket_to(_socket, "127.0.0.1", 6000)) {
-        error = "Could not bind socket to IP/port";
+    if (!bind_socket_to(_socket, 6001)) {
+        error = "Could not bind socket to all IPs & port";
         goto err;
     }
 
-    puts("Listening on TCP port 6000... waiting for client (press [Ctrl-C] to stop).");
-
-    int queue = SOCKET_ERROR;
-    listen(_socket, 0);
-    _client = wait_for_client(_socket, &queue);
+    puts("Listening on UDP port 6001... waiting for messages (press [Ctrl-C] to stop).");
 
     signal(SIGINT, close_sockets);   // make sure we handle [Ctrl]+[C] properly
 
-    display_client(_client);
-
-    display_client_queue_timeout(queue, 5);
+    display_client_messages(_socket, &_client);
 
     goto end;
 
