@@ -154,7 +154,6 @@ int main (int argc, char *argv[])
 
     goto end;
 
-
     err:
       fprintf(stderr, "[ERROR] %s! Exiting...\n", error);
       _status = EXIT_FAILURE;

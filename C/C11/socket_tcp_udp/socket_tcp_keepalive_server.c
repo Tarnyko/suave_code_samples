@@ -83,11 +83,11 @@ static void close_sockets(int)
 }
 
 
-bool bind_socket_to(const int socket, const char* ip, const unsigned short port)
+bool bind_socket_to(const int socket, const unsigned short port)
 {
     struct sockaddr_in server = {0};
     server = (struct sockaddr_in) { .sin_family      = AF_INET,
-                                    .sin_addr.s_addr = inet_addr(ip),
+                                    .sin_addr.s_addr = htonl(INADDR_ANY),
                                     .sin_port        = htons(port) };
 
     return bind(socket, (struct sockaddr*)&server, sizeof(struct sockaddr)) != SOCKET_ERROR;
@@ -173,7 +173,7 @@ int main (int argc, char *argv[])
         goto err;
     }
 
-    if (!bind_socket_to(_socket, "127.0.0.1", 6000)) {
+    if (!bind_socket_to(_socket, 6000)) {
         error = "Could not bind socket to IP/port";
         goto err;
     }
@@ -191,7 +191,6 @@ int main (int argc, char *argv[])
     display_client_queue_timeout(queue, 5);
 
     goto end;
-
 
     err:
       fprintf(stderr, "[ERROR] %s! Exiting...\n", error);
