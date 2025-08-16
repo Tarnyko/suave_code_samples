@@ -16,8 +16,10 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 gl`
+/*  Compile with:
+ * - UNIX   : gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lGL
+ * - Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lopengl32
+ */
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>

@@ -16,12 +16,28 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 gl`
+/*  Compile with:
+ * - UNIX   : gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lGL
+ * - Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lopengl32
+ */
 
 #include <SDL3/SDL.h>
 #define GL_GLEXT_PROTOTYPES    // for OpenGL>1.1 imports
 #include <SDL3/SDL_opengl.h>
+
+#ifdef _WIN32
+# define IMPORT_GL2_VBO_EXTS() \
+    PFNGLGENBUFFERSPROC glGenBuffers =\
+        (PFNGLGENBUFFERSPROC) SDL_GL_GetProcAddress("glGenBuffers");\
+    PFNGLDELETEBUFFERSPROC glDeleteBuffers =\
+        (PFNGLDELETEBUFFERSPROC) SDL_GL_GetProcAddress("glDeleteBuffers");\
+    PFNGLBINDBUFFERPROC glBindBuffer =\
+        (PFNGLBINDBUFFERPROC) SDL_GL_GetProcAddress("glBindBuffer");\
+    PFNGLBUFFERDATAPROC glBufferData =\
+        (PFNGLBUFFERDATAPROC) SDL_GL_GetProcAddress("glBufferData");
+#else
+#  define IMPORT_GL2_VBO_EXTS()     {}
+#endif
 
 
 #define LINES       2
@@ -60,6 +76,8 @@ void redraw(SDL_Window* window, GLuint* vbos)
     glClearColor(0, 0, 0, 255);                                // background (Black)
     glClear(GL_COLOR_BUFFER_BIT);
 
+    IMPORT_GL2_VBO_EXTS();
+
     glBindBuffer(GL_ARRAY_BUFFER, vbos[0]);
     glVertexPointer(2, GL_FLOAT, 0, 0);                        // 2 lines
 
@@ -87,6 +105,8 @@ int main (int argc, char* argv[])
 
     glEnableClientState(GL_VERTEX_ARRAY);    // to use "glVertexPointer()"
     glEnableClientState(GL_COLOR_ARRAY);     // to use "glColorPointer()"
+
+    IMPORT_GL2_VBO_EXTS();
 
     GLuint vbos[3];
     glGenBuffers(3, vbos);

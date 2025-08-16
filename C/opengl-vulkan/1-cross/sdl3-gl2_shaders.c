@@ -16,12 +16,45 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 gl`
+/*  Compile with:
+ * - UNIX   : gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lGL
+ * - Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lopengl32
+ */
 
 #include <SDL3/SDL.h>
 #define GL_GLEXT_PROTOTYPES    // for OpenGL>1.1 imports
 #include <SDL3/SDL_opengl.h>
+
+#ifdef _WIN32
+# define IMPORT_GL2_SHADER_EXTS() \
+    PFNGLSHADERSOURCEPROC  glShaderSource  = (PFNGLSHADERSOURCEPROC)\
+        SDL_GL_GetProcAddress("glShaderSource");\
+    PFNGLCREATESHADERPROC  glCreateShader  = (PFNGLCREATESHADERPROC)\
+        SDL_GL_GetProcAddress("glCreateShader");\
+    PFNGLDELETESHADERPROC  glDeleteShader  = (PFNGLDELETESHADERPROC)\
+        SDL_GL_GetProcAddress("glDeleteShader");\
+    PFNGLCOMPILESHADERPROC glCompileShader = (PFNGLCOMPILESHADERPROC)\
+        SDL_GL_GetProcAddress("glCompileShader");\
+    PFNGLATTACHSHADERPROC  glAttachShader  = (PFNGLATTACHSHADERPROC)\
+        SDL_GL_GetProcAddress("glAttachShader");\
+    PFNGLCREATEPROGRAMPROC glCreateProgram = (PFNGLCREATEPROGRAMPROC)\
+        SDL_GL_GetProcAddress("glCreateProgram");\
+    PFNGLDELETEPROGRAMPROC glDeleteProgram = (PFNGLDELETEPROGRAMPROC)\
+        SDL_GL_GetProcAddress("glDeleteProgram");\
+    PFNGLLINKPROGRAMPROC   glLinkProgram   = (PFNGLLINKPROGRAMPROC)\
+        SDL_GL_GetProcAddress("glLinkProgram");\
+    PFNGLUSEPROGRAMPROC    glUseProgram    = (PFNGLUSEPROGRAMPROC)\
+        SDL_GL_GetProcAddress("glUseProgram");
+
+# define IMPORT_GL2_VERTEX_EXTS() \
+    PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer =\
+        (PFNGLVERTEXATTRIBPOINTERPROC) SDL_GL_GetProcAddress("glVertexAttribPointer");\
+    PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray =\
+        (PFNGLENABLEVERTEXATTRIBARRAYPROC) SDL_GL_GetProcAddress("glEnableVertexAttribArray");
+#else
+#  define IMPORT_GL2_SHADER_EXTS() {}
+#  define IMPORT_GL2_VERTEX_EXTS() {}
+#endif
 
 
 #define LINES       2
@@ -83,6 +116,8 @@ void redraw(SDL_Window* window)
     glClearColor(0, 0, 0, 255);                                // background (Black)
     glClear(GL_COLOR_BUFFER_BIT);
 
+    IMPORT_GL2_VERTEX_EXTS();
+
     // ID 0: 'p_position' in shader
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertex_arr);        // 2 lines
     glEnableVertexAttribArray(0);
@@ -108,6 +143,8 @@ int main (int argc, char* argv[])
     SDL_GLContext context = SDL_GL_CreateContext(window);
 
     SDL_SetWindowResizable(window, true);
+
+    IMPORT_GL2_SHADER_EXTS();
 
     GLuint vert_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert_shader, 1, &vertex_shader, NULL);
