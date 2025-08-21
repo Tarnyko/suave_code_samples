@@ -1,5 +1,5 @@
 /*
-* sdl3-gles3.c
+* sdl3-gles32.c
 * Copyright (C) 2025  Manuel Bachmann <tarnyko.tarnyko.net>
 *
 * This program is free software: you can redistribute it and/or modify
@@ -36,6 +36,7 @@
 #define INIT_WIDTH  800
 #define INIT_HEIGHT 600
 
+typedef enum { _SHADER, _PROGRAM } _Type;
 
 static unsigned int _width  = INIT_WIDTH;
 static unsigned int _height = INIT_HEIGHT;
@@ -60,50 +61,91 @@ static const GLuint index_arr[LINES * 2] = {     // 1 line: 2 points ON 2 select
 };
 
 static const GLchar *vertex_shader =
-    "#version 300 es                        \n"
+    "#version 320 es                        \n"
     "                                       \n"
     "layout(location=0) in vec4 p_position; \n" // 1st attribute: ID 0
-    "layout(location=1) in vec4 p_color;    \n" // 2nd attribute: ID 1
-    "out vec4 v_color;                      \n"
+    "layout(location=1) in vec4 p_color1;   \n" // 2nd attribute: ID 1
+    "layout(location=2) in vec4 p_color2;   \n" // 3rd attribute: ID 2
+    "                                       \n"
+    "out VS_OUT {                           \n" // geometry shader needs...
+    "  vec4 color1;                         \n" // ... an array as input
+    "  vec4 color2;                         \n"
+    "} v_color;                             \n"
     "                                       \n"
     "void main()                            \n"
     "{                                      \n"
-    "  v_color = p_color;                   \n"
+    "  v_color.color1 = p_color1;           \n"
+    "  v_color.color2 = p_color2;           \n"
     "  gl_Position = p_position;            \n"  // (builtin)
     "}                                      \n";
 
+static const GLchar *geometry_shader =
+    "#version 320 es                         \n"
+    "                                        \n"
+    "layout(lines) in;                       \n"
+    "layout(line_strip, max_vertices=2) out; \n" // 1 line, 2 points
+    "                                        \n"
+    "in VS_OUT {                             \n" // from vertex shader...
+    "  vec4 color1;                          \n"
+    "  vec4 color2;                          \n"
+    "} v_color[];                            \n"
+    "                                        \n"
+    "out vec4 g_color;                       \n" // ...to fragment shader
+    "                                        \n"
+    "void main()                             \n"
+    "{                                       \n"
+    "  g_color = v_color[0].color1;          \n"  // color 1
+    "  gl_Position = gl_in[0].gl_Position;   \n"  // (builtin) point 1
+    "  EmitVertex();                         \n"  // (builtin) stack!
+    "                                        \n"
+    "  g_color = v_color[0].color2;          \n"  // color 2
+    "  gl_Position = gl_in[1].gl_Position;   \n"  // (builtin) point 2
+    "  EmitVertex();                         \n"  // (builtin) stack!
+    "                                        \n"
+    "  EndPrimitive();                       \n"  // (builtin) send!
+    "}                                       \n";
+
 static const GLchar *color_shader =
-    "#version 300 es                  \n"
+    "#version 320 es                  \n"
     "precision mediump float;         \n"
     "                                 \n"
-    "in vec4 v_color;                 \n"
+    "in vec4 g_color;                 \n"
     "out vec4 frag_color;             \n"
     "                                 \n"
     "void main()                      \n"
     "{                                \n"
-    "  frag_color = v_color;          \n"
+    "  frag_color = g_color;          \n"
     "}                                \n";
 
 
 
-void check_shader(const char* type, GLuint shader)
+void check_shader_or_program(const char* type_name, _Type type, GLuint id)
 {
     GLint res = 0;
 
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &res);
+    switch(type) {
+      case _SHADER : glGetShaderiv(id, GL_COMPILE_STATUS, &res); break;
+      case _PROGRAM: glGetProgramiv(id, GL_LINK_STATUS, &res); break;
+    }
     if (res == GL_TRUE) {
         return; }
 
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &res);
+    switch(type) {
+      case _SHADER : glGetShaderiv(id, GL_INFO_LOG_LENGTH, &res); break;
+      case _PROGRAM: glGetProgramiv(id, GL_INFO_LOG_LENGTH, &res); break;
+    }
     if (res > 0) {
         GLchar err[res];
         memset(err, 0, res);
-        glGetShaderInfoLog(shader, res, &res, err);
-        fprintf(stderr, "[%s shader (ID=%d)] %s", type, shader, err);
+        switch(type) {
+          case _SHADER : glGetShaderInfoLog(id, res, &res, err); break;
+          case _PROGRAM: glGetProgramInfoLog(id, res, &res, err); break;
+        }
+        fprintf(stderr, "[%s (ID=%d)] %s", type_name, id, err);
     }
 }
 
-void redraw(SDL_Window* window)
+void redraw(SDL_Window* window, GLuint* vbos)
 {
     glViewport(0, 0, _width, _height);                         // size
 
@@ -111,14 +153,22 @@ void redraw(SDL_Window* window)
     glClear(GL_COLOR_BUFFER_BIT);
 
     // ID 0: 'p_position' in shader
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertex_arr);        // 2 lines
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[0]);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);        // 2 lines
     glEnableVertexAttribArray(0);
 
-    // ID 1: 'p_color' in shader (GL_TRUE to normalize: 0 -> 0.0f, 255 -> 1.0f)
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, color_arr); // 4 colors
+    // ID 1: 'p_color1' in shader (GL_TRUE to normalize: 0 -> 0.0f, 255 -> 1.0f)
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[1]);
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0); // 4 colors
     glEnableVertexAttribArray(1);
-    
-    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, index_arr);  // 4 points on 4 colors
+    // ID 2: 'p_color2' in shader
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[2]);
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0); // 4 colors, 2-shifted
+    glEnableVertexAttribArray(2);
+
+    // ID 3
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbos[3]);
+    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, 0);  // 4 points on 4 colors
 
     SDL_GL_SwapWindow(window);
 }
@@ -139,24 +189,53 @@ int main (int argc, char* argv[])
 
     SDL_SetWindowResizable(window, true);
 
+    // 1) Shaders
+
     GLuint vert_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert_shader, 1, &vertex_shader, NULL);
     glCompileShader(vert_shader);
+
+    GLuint geom_shader = glCreateShader(GL_GEOMETRY_SHADER_OES);
+    glShaderSource(geom_shader, 1, &geometry_shader, NULL);
+    glCompileShader(geom_shader);
 
     GLuint frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag_shader, 1, &color_shader, NULL);
     glCompileShader(frag_shader);
 
 # ifdef DEBUG
-    check_shader("vertex", vert_shader);
-    check_shader("fragment", frag_shader);
+    check_shader_or_program("vertex shader", _SHADER, vert_shader);
+    check_shader_or_program("geometry shader", _SHADER, geom_shader);
+    check_shader_or_program("fragment shader", _SHADER, frag_shader);
 # endif
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vert_shader);
+    glAttachShader(program, geom_shader);
     glAttachShader(program, frag_shader);
     glLinkProgram(program);
+# ifdef DEBUG
+    check_shader_or_program("program", _PROGRAM, program);
+# endif
     glUseProgram(program);
+
+    // 2) VBOs
+
+    GLuint vbos[4];
+    glGenBuffers(4, vbos);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[0]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_arr), vertex_arr, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[1]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(color_arr), color_arr, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, vbos[2]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(color_arr), color_arr+2, GL_STATIC_DRAW); // 2-shifted
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbos[3]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(index_arr), index_arr, GL_STATIC_DRAW);
+
+    // 3) Main loop
 
     while (true) {
         SDL_Event e;
@@ -172,11 +251,13 @@ int main (int argc, char* argv[])
             }
         }
 
-        redraw(window);
+        redraw(window, vbos);
     }
 
   end:
+    glDeleteBuffers(4, vbos);
     glDeleteProgram(program);
+    glDeleteShader(geom_shader);
     glDeleteShader(frag_shader);
     glDeleteShader(vert_shader);
     SDL_GL_DestroyContext(context);
