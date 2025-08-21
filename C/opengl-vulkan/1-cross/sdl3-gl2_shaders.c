@@ -22,6 +22,9 @@
  * - macOS: clang -std=c11 ... `pkg-config --cflags --libs sdl3` -framework OpenGL
  */
 
+#include <stdio.h>
+#include <string.h>
+
 #include <SDL3/SDL.h>
 #ifdef __APPLE__
 #  define GL_SILENCE_DEPRECATION
@@ -30,33 +33,42 @@
 #include <SDL3/SDL_opengl.h>
 
 #ifdef _WIN32
-# define IMPORT_GL2_SHADER_EXTS() \
-    PFNGLSHADERSOURCEPROC  glShaderSource  = (PFNGLSHADERSOURCEPROC)\
-        SDL_GL_GetProcAddress("glShaderSource");\
-    PFNGLCREATESHADERPROC  glCreateShader  = (PFNGLCREATESHADERPROC)\
-        SDL_GL_GetProcAddress("glCreateShader");\
-    PFNGLDELETESHADERPROC  glDeleteShader  = (PFNGLDELETESHADERPROC)\
-        SDL_GL_GetProcAddress("glDeleteShader");\
-    PFNGLCOMPILESHADERPROC glCompileShader = (PFNGLCOMPILESHADERPROC)\
-        SDL_GL_GetProcAddress("glCompileShader");\
-    PFNGLATTACHSHADERPROC  glAttachShader  = (PFNGLATTACHSHADERPROC)\
-        SDL_GL_GetProcAddress("glAttachShader");\
-    PFNGLCREATEPROGRAMPROC glCreateProgram = (PFNGLCREATEPROGRAMPROC)\
-        SDL_GL_GetProcAddress("glCreateProgram");\
-    PFNGLDELETEPROGRAMPROC glDeleteProgram = (PFNGLDELETEPROGRAMPROC)\
-        SDL_GL_GetProcAddress("glDeleteProgram");\
-    PFNGLLINKPROGRAMPROC   glLinkProgram   = (PFNGLLINKPROGRAMPROC)\
-        SDL_GL_GetProcAddress("glLinkProgram");\
-    PFNGLUSEPROGRAMPROC    glUseProgram    = (PFNGLUSEPROGRAMPROC)\
-        SDL_GL_GetProcAddress("glUseProgram");
+#  include <windows.h>
 
-# define IMPORT_GL2_VERTEX_EXTS() \
-    PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer =\
-        (PFNGLVERTEXATTRIBPOINTERPROC) SDL_GL_GetProcAddress("glVertexAttribPointer");\
-    PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray =\
-        (PFNGLENABLEVERTEXATTRIBARRAYPROC) SDL_GL_GetProcAddress("glEnableVertexAttribArray");
+#  define IMPORT_GL2_SHADER_EXTS() \
+     PFNGLSHADERSOURCEPROC  glShaderSource  = (PFNGLSHADERSOURCEPROC)\
+       SDL_GL_GetProcAddress("glShaderSource");\
+     PFNGLCREATESHADERPROC  glCreateShader  = (PFNGLCREATESHADERPROC)\
+       SDL_GL_GetProcAddress("glCreateShader");\
+     PFNGLDELETESHADERPROC  glDeleteShader  = (PFNGLDELETESHADERPROC)\
+       SDL_GL_GetProcAddress("glDeleteShader");\
+     PFNGLCOMPILESHADERPROC glCompileShader = (PFNGLCOMPILESHADERPROC)\
+       SDL_GL_GetProcAddress("glCompileShader");\
+     PFNGLATTACHSHADERPROC  glAttachShader  = (PFNGLATTACHSHADERPROC)\
+       SDL_GL_GetProcAddress("glAttachShader");\
+     PFNGLCREATEPROGRAMPROC glCreateProgram = (PFNGLCREATEPROGRAMPROC)\
+       SDL_GL_GetProcAddress("glCreateProgram");\
+     PFNGLDELETEPROGRAMPROC glDeleteProgram = (PFNGLDELETEPROGRAMPROC)\
+       SDL_GL_GetProcAddress("glDeleteProgram");\
+     PFNGLLINKPROGRAMPROC   glLinkProgram   = (PFNGLLINKPROGRAMPROC)\
+       SDL_GL_GetProcAddress("glLinkProgram");\
+     PFNGLUSEPROGRAMPROC    glUseProgram    = (PFNGLUSEPROGRAMPROC)\
+       SDL_GL_GetProcAddress("glUseProgram");
+
+#  define IMPORT_GL2_SHADER_DBG_EXTS() \
+     PFNGLGETSHADERIVPROC glGetShaderiv = (PFNGLGETSHADERIVPROC)\
+       SDL_GL_GetProcAddress("glGetShaderiv");\
+     PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC)\
+       SDL_GL_GetProcAddress("glGetShaderInfoLog");
+
+#  define IMPORT_GL2_VERTEX_EXTS() \
+     PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer =\
+       (PFNGLVERTEXATTRIBPOINTERPROC) SDL_GL_GetProcAddress("glVertexAttribPointer");\
+     PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray =\
+       (PFNGLENABLEVERTEXATTRIBARRAYPROC) SDL_GL_GetProcAddress("glEnableVertexAttribArray");
 #else
 #  define IMPORT_GL2_SHADER_EXTS() {}
+#  define IMPORT_GL2_SHADER_DBG_EXTS() {}
 #  define IMPORT_GL2_VERTEX_EXTS() {}
 #endif
 
@@ -113,6 +125,25 @@ static const GLchar *color_shader =
 
 
 
+void check_shader(const char* type, GLuint shader)
+{
+    GLint res = 0;
+
+    IMPORT_GL2_SHADER_DBG_EXTS();
+
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &res);
+    if (res == GL_TRUE) {
+        return; }
+
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &res);
+    if (res > 0) {
+        GLchar err[res];
+        memset(err, 0, res);
+        glGetShaderInfoLog(shader, res, &res, err);
+        fprintf(stderr, "[%s shader (ID=%d)] %s", type, shader, err);
+    }
+}
+
 void redraw(SDL_Window* window)
 {
     glViewport(0, 0, _width, _height);                         // size
@@ -140,6 +171,12 @@ int main (int argc, char* argv[])
 {
     SDL_Init(SDL_INIT_VIDEO);
 
+# if defined(_WIN32) && defined(DEBUG)
+    AllocConsole();
+    freopen("conout$","w",stdout);
+    freopen("conout$","w",stderr);
+# endif
+
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 
@@ -157,6 +194,11 @@ int main (int argc, char* argv[])
     GLuint frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag_shader, 1, &color_shader, NULL);
     glCompileShader(frag_shader);
+
+# ifdef DEBUG
+    check_shader("vertex", vert_shader);
+    check_shader("fragment", frag_shader);
+# endif
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vert_shader);

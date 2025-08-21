@@ -16,8 +16,17 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 glesv2`
+/*  Compile with:
+ * - UNIX/Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3 glesv2`
+ * - macOS:      clang -std=c11 ... -I$ANGLE_PATH/include `pkg-config --cflags
+ *                     --libs sdl3` -L$ANGLE_PATH -lGLESv2
+ */
+
+#include <stdio.h>
+#include <string.h>
+#ifdef _WIN32
+#  include <windows.h>
+#endif
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengles2.h>
@@ -77,6 +86,23 @@ static const GLchar *color_shader =
 
 
 
+void check_shader(const char* type, GLuint shader)
+{
+    GLint res = 0;
+
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &res);
+    if (res == GL_TRUE) {
+        return; }
+
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &res);
+    if (res > 0) {
+        GLchar err[res];
+        memset(err, 0, res);
+        glGetShaderInfoLog(shader, res, &res, err);
+        fprintf(stderr, "[%s shader (ID=%d)] %s", type, shader, err);
+    }
+}
+
 void redraw(SDL_Window* window, GLuint* vbos)
 {
     glViewport(0, 0, _width, _height);                         // size
@@ -105,6 +131,12 @@ int main (int argc, char* argv[])
 {
     SDL_Init(SDL_INIT_VIDEO);
 
+# if defined(_WIN32) && defined(DEBUG)
+    AllocConsole();
+    freopen("conout$","w",stdout);
+    freopen("conout$","w",stderr);
+# endif
+
     SDL_Window* window = SDL_CreateWindow(argv[0], INIT_WIDTH, INIT_HEIGHT, SDL_WINDOW_OPENGL);
     SDL_GLContext context = SDL_GL_CreateContext(window);
 
@@ -119,6 +151,11 @@ int main (int argc, char* argv[])
     GLuint frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag_shader, 1, &color_shader, NULL);
     glCompileShader(frag_shader);
+
+# ifdef DEBUG
+    check_shader("vertex", vert_shader);
+    check_shader("fragment", frag_shader);
+# endif
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vert_shader);
