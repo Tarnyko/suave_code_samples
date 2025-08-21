@@ -16,8 +16,11 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 vulkan`
+/*  Compile with:
+ * - UNIX/Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3 vulkan`
+ * - macOS: clang -std=c11 ... -I$MOLTENVK_PATH/include `pkg-config --cflags
+ *                --libs sdl3` -L$MOLTENVK_PATH/lib -lvulkan -lMoltenVK
+ */
 
 #include <assert.h>
 #include <stdbool.h>

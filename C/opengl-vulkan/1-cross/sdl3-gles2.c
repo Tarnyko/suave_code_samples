@@ -16,8 +16,11 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//  Compile with:
-// gcc -std=c11 ... `pkg-config --cflags --libs sdl3 glesv2`
+/*  Compile with:
+ * - UNIX/Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3 glesv2`
+ * - macOS:      clang -std=c11 ... -I$ANGLE_PATH/include `pkg-config --cflags
+ *                     --libs sdl3` -L$ANGLE_PATH -lGLESv2
+ */
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengles2.h>

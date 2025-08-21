@@ -17,12 +17,16 @@
 */
 
 /*  Compile with:
- * - UNIX   : gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lGL
+ * - UNIX:    gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lGL
  * - Windows: gcc -std=c11 ... `pkg-config --cflags --libs sdl3` -lopengl32
+ * - macOS: clang -std=c11 ... `pkg-config --cflags --libs sdl3` -framework OpenGL
  */
 
 #include <SDL3/SDL.h>
 #define GL_GLEXT_PROTOTYPES    // for OpenGL>1.1 imports
+#ifdef __APPLE__
+#  define GL_SILENCE_DEPRECATION
+#endif
 #include <SDL3/SDL_opengl.h>
 
 #ifdef _WIN32
