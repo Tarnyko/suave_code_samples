@@ -1,0 +1,6 @@
+! xrdb -merge Xresources
+
+*.renderTable: variable
+*.renderTable.variable.fontName: Sans
+*.renderTable.variable.fontSize: 10
+*.renderTable.variable.fontType: FONT_IS_XFT
