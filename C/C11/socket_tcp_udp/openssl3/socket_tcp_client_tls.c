@@ -89,6 +89,7 @@ void deinit_os_sockets()
 static void close_sockets(int)
 {
     if (_ssl) {
+        SSL_shutdown(_ssl);
         SSL_free(_ssl);
     }
     if (_socket != SOCKET_ERROR) {
@@ -269,14 +270,14 @@ SSL* connect_to_ssl_server_timeout(const int sock, const SSL_CTX* ctx, const int
     struct timespec prev_time, curr_time = {0};
     timespec_get(&prev_time, TIME_UTC);
 
-    int res = SOCKET_ERROR;
+    int res = -1;
 
-    while (res == SOCKET_ERROR) {
-        res = SSL_connect(ssl);
-        if (res != SOCKET_ERROR) {
+    while (true) {
+        if ((res = SSL_connect(ssl)) > 0) {
             break; }
 
-        if (SSL_get_error(ssl, res) != SSL_ERROR_WANT_READ) {
+        if ((SSL_get_error(ssl, res) != SSL_ERROR_WANT_READ) &&
+            (SSL_get_error(ssl, res) != SSL_ERROR_WANT_WRITE)) {
             SSL_free(ssl);
             return NULL; }
 

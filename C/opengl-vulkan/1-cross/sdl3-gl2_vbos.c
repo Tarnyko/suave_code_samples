@@ -83,13 +83,13 @@ void redraw(SDL_Window* window, GLuint* vbos)
     IMPORT_GL2_VBO_EXTS();
 
     glBindBuffer(GL_ARRAY_BUFFER, vbos[0]);
-    glVertexPointer(2, GL_FLOAT, 0, 0);                        // 2 lines
+    glVertexPointer(2, GL_FLOAT, 0, 0);                        // 1 point: 2 floats
 
     glBindBuffer(GL_ARRAY_BUFFER, vbos[1]);
-    glColorPointer(4, GL_UNSIGNED_BYTE, 0, 0);                 // 4 colors
+    glColorPointer(4, GL_UNSIGNED_BYTE, 0, 0);                 // 1 color: 4 bytes
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbos[2]);
-    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, 0);           // match 4 points on 4 colors
+    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, 0);           // draw 4 points as lines
 
     SDL_GL_SwapWindow(window);
 }

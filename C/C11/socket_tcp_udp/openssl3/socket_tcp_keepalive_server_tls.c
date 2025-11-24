@@ -92,6 +92,7 @@ void deinit_os_sockets()
 static void close_sockets(int)
 {
     if (_ssl) {
+        SSL_shutdown(_ssl);
         SSL_free(_ssl);
     }
     if (_client) {

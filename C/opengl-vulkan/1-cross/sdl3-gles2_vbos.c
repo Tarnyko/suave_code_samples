@@ -104,23 +104,23 @@ void check_shader(const char* type, GLuint shader)
 
 void redraw(SDL_Window* window, GLuint* vbos)
 {
-    glViewport(0, 0, _width, _height);                         // size
+    glViewport(0, 0, _width, _height);                          // size
 
-    glClearColor(0, 0, 0, 255);                                // background (Black)
+    glClearColor(0, 0, 0, 255);                                 // background (Black)
     glClear(GL_COLOR_BUFFER_BIT);
 
     // ID 0: 'p_position' in shader
     glBindBuffer(GL_ARRAY_BUFFER, vbos[0]);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);        // 2 lines
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);       // 1 point: 2 floats
     glEnableVertexAttribArray(0);
 
     // ID 1: 'p_color' in shader (GL_TRUE to normalize: 0 -> 0.0f, 255 -> 1.0f)
     glBindBuffer(GL_ARRAY_BUFFER, vbos[1]);
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0); // 4 colors
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, 0); // 1 color: 4 bytes
     glEnableVertexAttribArray(1);
     
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbos[2]);
-    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, 0);   // 4 points on 4 colors
+    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, 0);        // draw 4 points as lines
 
     SDL_GL_SwapWindow(window);
 }

@@ -154,14 +154,14 @@ void redraw(SDL_Window* window)
     IMPORT_GL2_VERTEX_EXTS();
 
     // ID 0: 'p_position' in shader
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertex_arr);        // 2 lines
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertex_arr);      // 2 floats
     glEnableVertexAttribArray(0);
 
     // ID 1: 'p_color' in shader (GL_TRUE to normalize: 0 -> 0.0f, 255 -> 1.0f)
-    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, color_arr); // 4 colors
+    glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, color_arr); // 4 bytes
     glEnableVertexAttribArray(1);
     
-    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, index_arr);  // 4 points on 4 colors
+    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, index_arr);    // 4 points as lines
 
     SDL_GL_SwapWindow(window);
 }

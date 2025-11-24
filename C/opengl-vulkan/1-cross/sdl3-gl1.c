@@ -65,9 +65,9 @@ void redraw(SDL_Window* window)
     glClearColor(0, 0, 0, 255);                                // background (Black)
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glVertexPointer(2, GL_FLOAT, 0, vertex_arr);               // 2 lines
-    glColorPointer(4, GL_UNSIGNED_BYTE, 0, color_arr);         // 4 colors
-    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, index_arr);   // match 4 points on 4 colors
+    glVertexPointer(2, GL_FLOAT, 0, vertex_arr);               // 1 point: 2 floats
+    glColorPointer(4, GL_UNSIGNED_BYTE, 0, color_arr);         // 1 color: 4 bytes
+    glDrawElements(GL_LINES, 4, GL_UNSIGNED_INT, index_arr);   // draw 4 points as lines
 
     SDL_GL_SwapWindow(window);
 }
