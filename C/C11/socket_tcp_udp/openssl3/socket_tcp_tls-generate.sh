@@ -2,7 +2,7 @@
 
 SELF=$(basename "$0")
 
-openssl req -x509 -newkey rsa:2048 -keyout ${SELF}-private.pem -out ${SELF}-public.pem -nodes -days 365
+openssl req -config socket_tcp_tls.cnf -x509 -newkey rsa:2048 -keyout ${SELF}-private.pem -out ${SELF}-public.pem -nodes -days 365
 
 for i in *.c; do
     [ -f "$i" ] || break
