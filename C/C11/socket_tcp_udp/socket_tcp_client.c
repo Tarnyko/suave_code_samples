@@ -19,8 +19,8 @@
 /*  Compile with:
  - Linux (glibc>=2.31): gcc -std=c11 -D_DEFAULT_SOURCE ...
  - Linux (older):       gcc -std=c11 -D_BSD_SOURCE -DHAVE_TIMESPEC_GET ...
- - Windows (MinGW>=14): gcc -std=c11 -D_UCRT ... -lws2_32 -lucrt
- - Windows (older):     gcc -std=c11 ... -lws2_32
+ - Win32 (MinGW>=13):   gcc -std=c11 -D_UCRT ... -lws2_32 -lucrt
+ - Win32 (older):       gcc -std=c11 ... -lws2_32
 */
 
 

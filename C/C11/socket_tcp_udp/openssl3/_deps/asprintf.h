@@ -1,4 +1,4 @@
-#ifdef __GNUC__ && defined _GNU_SOURCE
+#if defined(__GNUC__) && defined(_GNU_SOURCE)
 #  warning "Your compiler should already have 'asprintf()'."
 #endif
 
