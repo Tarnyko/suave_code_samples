@@ -3,6 +3,8 @@
 #endif
 
 #include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int vasprintf(char **sptr, char *fmt, va_list argv)
 {
