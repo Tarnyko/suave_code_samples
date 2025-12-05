@@ -39,7 +39,6 @@
 // Wayland headers
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
-#include "_deps/xdg-shell-unstable-v6-client-protocol.h"
 
 
 // My prototypes
@@ -49,7 +48,7 @@ typedef enum {
 } CompositorId;
 
 typedef enum {
-    E_WL_SHELL = 0, E_XDG_WM_BASE = 1, E_XDG_SHELL = 2
+    E_WL_SHELL = 0, E_XDG_WM_BASE = 1
 } ShellId;
 
 
@@ -83,7 +82,6 @@ typedef struct {
     ShellId               shellId;
     void*                 shell;         // 'shell': window manager
     struct wl_shell*      wl_shell;      //  (among: - deprecated
-    struct zxdg_shell_v6* xdg_shell;     //          - former unstable
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
 
     struct wl_shm*        shm;           // 'shared mem': software renderer
@@ -143,28 +141,6 @@ void xdg_toplevel_close(void*, struct xdg_toplevel*);
 static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     xdg_toplevel_configure,
     xdg_toplevel_close
-};
-
-
-void zxdg_shell_v6_handle_ping(void*, struct zxdg_shell_v6*, uint32_t);
-
-static const struct zxdg_shell_v6_listener zxdg_shell_v6_listener = {
-    zxdg_shell_v6_handle_ping
-};
-
-void zxdg_surface_v6_configure(void*, struct zxdg_surface_v6*, uint32_t);
-
-static const struct zxdg_surface_v6_listener zxdg_surface_v6_listener = {
-    zxdg_surface_v6_configure
-};
-
-void zxdg_toplevel_v6_configure(void*, struct zxdg_toplevel_v6*,
-		                int32_t, int32_t, struct wl_array*);
-void zxdg_toplevel_v6_close(void*, struct zxdg_toplevel_v6*);
-
-static const struct zxdg_toplevel_v6_listener zxdg_toplevel_v6_listener = {
-    zxdg_toplevel_v6_configure,
-    zxdg_toplevel_v6_close
 };
 
 
@@ -238,8 +214,6 @@ int main(int argc, char* argv[])
   end:
     if (_info.xdg_wm_base) {
         xdg_wm_base_destroy(_info.xdg_wm_base); }
-    if (_info.xdg_shell) {
-        zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
     if (_info.shm) {
@@ -266,12 +240,6 @@ char* elect_shell(InterfaceInfo* _info)
         _info->shell   = _info->wl_shell;
         _info->shellId = E_WL_SHELL;
         return "wl_shell";
-    // former unstable version of 'xdg_wm_base'
-    } else if (_info->xdg_shell) {
-        _info->shell   = _info->xdg_shell;
-        _info->shellId = E_XDG_SHELL;
-        zxdg_shell_v6_add_listener(_info->xdg_shell, &zxdg_shell_v6_listener, NULL);
-        return "zxdg_shell_v6";
     }
  
     return NULL;
@@ -301,17 +269,6 @@ void* create_shell_surface(InterfaceInfo* _info, struct wl_surface* surface, cha
        xdg_toplevel_set_title(xdg_toplevel, arg);
        return xdg_surface;
      }
-     case E_XDG_SHELL:
-     {
-       struct zxdg_surface_v6* zxdg_surface = zxdg_shell_v6_get_xdg_surface((struct zxdg_shell_v6*) _info->shell, surface);
-       assert(zxdg_surface);
-       zxdg_surface_v6_add_listener(zxdg_surface, &zxdg_surface_v6_listener, NULL);
-       struct zxdg_toplevel_v6* zxdg_toplevel = zxdg_surface_v6_get_toplevel(zxdg_surface);
-       assert(zxdg_toplevel);
-       zxdg_toplevel_v6_add_listener(zxdg_toplevel, &zxdg_toplevel_v6_listener, NULL);
-       zxdg_toplevel_v6_set_title(zxdg_toplevel, arg);
-       return zxdg_surface;
-     }
      default:
        return NULL;
    }
@@ -323,7 +280,6 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
     {
       case E_WL_SHELL:    return wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
       case E_XDG_WM_BASE: return xdg_surface_destroy((struct xdg_surface*) shell_surface);
-      case E_XDG_SHELL:   return zxdg_surface_v6_destroy((struct zxdg_surface_v6*) shell_surface);
     }
 }
 
@@ -341,7 +297,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base/shell expects a commit before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base expects a commit before attaching a buffer (/!\)]
     wl_surface_commit(window->surface);
 
     // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
@@ -453,7 +409,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     } else if (!strcmp(name, "wl_shm"))         { _info->shm         = wl_registry_bind(registry, serial, &wl_shm_interface, 1);
     } else if (!strcmp(name, "wl_shell"))       { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
     } else if (!strcmp(name, "xdg_wm_base"))    { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
-    } else if (strstr(name, "xdg_shell"))       { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
     } else if (strstr(name, "gtk_shell"))       { _info->compositorId = E_GNOME;
     } else if (strstr(name, "plasma_shell"))    { _info->compositorId = E_KDE;
     } else if (strstr(name, "wlr_layer_shell")) { _info->compositorId = E_WLROOTS;
@@ -496,19 +451,5 @@ void xdg_toplevel_close(void* data, struct xdg_toplevel* xdg_toplevel)
 
 void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
                             int32_t width, int32_t height, struct wl_array* states)
-{ }
-
-
-void zxdg_shell_v6_handle_ping(void* data, struct zxdg_shell_v6* xdg_shell, uint32_t serial)
-{ zxdg_shell_v6_pong(xdg_shell, serial); }
-
-void zxdg_surface_v6_configure(void* data, struct zxdg_surface_v6* xdg_surface, uint32_t serial)
-{ zxdg_surface_v6_ack_configure(xdg_surface, serial); }
-
-void zxdg_toplevel_v6_close(void* data, struct zxdg_toplevel_v6* xdg_toplevel)
-{ }
-
-void zxdg_toplevel_v6_configure(void* data, struct zxdg_toplevel_v6* xdg_toplevel,
-                                int32_t width, int32_t height, struct wl_array* states)
 { }
 

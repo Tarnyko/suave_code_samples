@@ -39,7 +39,6 @@
 // Wayland headers
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
-#include "_deps/xdg-shell-unstable-v6-client-protocol.h"
 
 
 char *os_button_code_to_string(uint32_t code)
@@ -68,7 +67,7 @@ typedef enum {
 } CompositorId;
 
 typedef enum {
-    E_WL_SHELL = 0, E_XDG_WM_BASE = 1, E_XDG_SHELL = 2
+    E_WL_SHELL = 0, E_XDG_WM_BASE = 1
 } ShellId;
 
 typedef enum {
@@ -111,7 +110,6 @@ typedef struct {
     ShellId               shellId;
     void*                 shell;         // 'shell': window manager
     struct wl_shell*      wl_shell;      //  (among: - deprecated
-    struct zxdg_shell_v6* xdg_shell;     //          - former unstable
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
 
     struct wl_shm*        shm;           // 'shared mem': software renderer
@@ -224,28 +222,6 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 };
 
 
-void zxdg_shell_v6_handle_ping(void*, struct zxdg_shell_v6*, uint32_t);
-
-static const struct zxdg_shell_v6_listener zxdg_shell_v6_listener = {
-    zxdg_shell_v6_handle_ping
-};
-
-void zxdg_surface_v6_configure(void*, struct zxdg_surface_v6*, uint32_t);
-
-static const struct zxdg_surface_v6_listener zxdg_surface_v6_listener = {
-    zxdg_surface_v6_configure
-};
-
-void zxdg_toplevel_v6_configure(void*, struct zxdg_toplevel_v6*,
-		                int32_t, int32_t, struct wl_array*);
-void zxdg_toplevel_v6_close(void*, struct zxdg_toplevel_v6*);
-
-static const struct zxdg_toplevel_v6_listener zxdg_toplevel_v6_listener = {
-    zxdg_toplevel_v6_configure,
-    zxdg_toplevel_v6_close
-};
-
-
 int main(int argc, char* argv[])
 {
     struct wl_display* display = wl_display_connect(NULL);
@@ -341,8 +317,6 @@ int main(int argc, char* argv[])
   end:
     if (_info.xdg_wm_base) {
         xdg_wm_base_destroy(_info.xdg_wm_base); }
-    if (_info.xdg_shell) {
-        zxdg_shell_v6_destroy(_info.xdg_shell); }
     if (_info.wl_shell) {
         wl_shell_destroy(_info.wl_shell); }
     if (_info.ds) {
@@ -383,12 +357,6 @@ char* elect_shell(InterfaceInfo* _info)
         _info->shell   = _info->wl_shell;
         _info->shellId = E_WL_SHELL;
         return "wl_shell";
-    // former unstable version of 'xdg_wm_base'
-    } else if (_info->xdg_shell) {
-        _info->shell   = _info->xdg_shell;
-        _info->shellId = E_XDG_SHELL;
-        zxdg_shell_v6_add_listener(_info->xdg_shell, &zxdg_shell_v6_listener, NULL);
-        return "zxdg_shell_v6";
     }
  
     return NULL;
@@ -418,17 +386,6 @@ void* create_shell_surface(InterfaceInfo* _info, struct wl_surface* surface, cha
        xdg_toplevel_set_title(xdg_toplevel, arg);
        return xdg_toplevel;
      }
-     case E_XDG_SHELL:
-     {
-       struct zxdg_surface_v6* zxdg_surface = zxdg_shell_v6_get_xdg_surface((struct zxdg_shell_v6*) _info->shell, surface);
-       assert(zxdg_surface);
-       zxdg_surface_v6_add_listener(zxdg_surface, &zxdg_surface_v6_listener, NULL);
-       struct zxdg_toplevel_v6* zxdg_toplevel = zxdg_surface_v6_get_toplevel(zxdg_surface);
-       assert(zxdg_toplevel);
-       zxdg_toplevel_v6_add_listener(zxdg_toplevel, &zxdg_toplevel_v6_listener, _info);
-       zxdg_toplevel_v6_set_title(zxdg_toplevel, arg);
-       return zxdg_toplevel;
-     }
      default:
        return NULL;
    }
@@ -440,7 +397,6 @@ void destroy_shell_surface(InterfaceInfo* _info, void* shell_surface)
     {
       case E_WL_SHELL:    return wl_shell_surface_destroy((struct wl_shell_surface*) shell_surface);
       case E_XDG_WM_BASE: return xdg_toplevel_destroy((struct xdg_toplevel*) shell_surface);
-      case E_XDG_SHELL:   return zxdg_toplevel_v6_destroy((struct zxdg_toplevel_v6*) shell_surface);
     }
 }
 
@@ -450,7 +406,6 @@ void minimize_shell_surface(InterfaceInfo* _info, void* shell_surface)
     {
       case E_WL_SHELL:    puts("(unimplemented: 'wl_shell' cannot minimize)"); return;
       case E_XDG_WM_BASE: return xdg_toplevel_set_minimized((struct xdg_toplevel*) shell_surface);
-      case E_XDG_SHELL:   return zxdg_toplevel_v6_set_minimized((struct zxdg_toplevel_v6*) shell_surface);
       default:            return;
     }
 }
@@ -481,14 +436,6 @@ void maximize_shell_surface(InterfaceInfo* _info, void* shell_surface)
         xdg_toplevel_unset_maximized((struct xdg_toplevel*) shell_surface);
         return resize_window(_info, window, window->orig_width, window->orig_height);
       }
-      case E_XDG_SHELL:
-      {
-        if (!window->maximized) {
-            return zxdg_toplevel_v6_set_maximized((struct zxdg_toplevel_v6*) shell_surface); }
-        window->maximized = false;
-        zxdg_toplevel_v6_unset_maximized((struct zxdg_toplevel_v6*) shell_surface);
-        return resize_window(_info, window, window->orig_width, window->orig_height);
-      }
       default:
         return;
     }
@@ -499,8 +446,7 @@ void move_shell_surface(InterfaceInfo* _info, void* shell_surface, uint32_t seri
     switch (_info->shellId)
     {
       case E_WL_SHELL:    return wl_shell_surface_move((struct wl_shell_surface*) shell_surface, _info->seat, serial);
-      case E_XDG_WM_BASE: return xdg_toplevel_move    ((struct xdg_toplevel*)     shell_surface, _info->seat, serial);
-      case E_XDG_SHELL:   return zxdg_toplevel_v6_move((struct zxdg_toplevel_v6*) shell_surface, _info->seat, serial);
+      case E_XDG_WM_BASE: return xdg_toplevel_move((struct xdg_toplevel*) shell_surface, _info->seat, serial);
       default:            return;
     }
 }
@@ -520,7 +466,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base/shell expects a commit before attaching a buffer (/!\)]
+    // [/!\ xdg-wm-base expects a commit before attaching a buffer (/!\)]
     wl_surface_commit(window->surface);
 
     // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
@@ -675,7 +621,6 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     } else if (!strcmp(name, "wl_data_device_manager")) { _info->dd_manager  = wl_registry_bind(registry, serial, &wl_data_device_manager_interface, 1);
     } else if (!strcmp(name, "wl_shell"))               { _info->wl_shell    = wl_registry_bind(registry, serial, &wl_shell_interface, 1);
     } else if (!strcmp(name, "xdg_wm_base"))            { _info->xdg_wm_base = wl_registry_bind(registry, serial, &xdg_wm_base_interface, 1);
-    } else if (strstr(name, "xdg_shell"))               { _info->xdg_shell   = wl_registry_bind(registry, serial, &zxdg_shell_v6_interface, 1);
     } else if (strstr(name, "gtk_shell"))               { _info->compositorId = E_GNOME;
     } else if (strstr(name, "plasma_shell"))            { _info->compositorId = E_KDE;
     } else if (strstr(name, "wlr_layer_shell"))         { _info->compositorId = E_WLROOTS;
@@ -869,40 +814,6 @@ void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
     if (width > 0 && height > 0) {
       if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED ||
           *state == XDG_TOPLEVEL_STATE_FULLSCREEN) {
-        window->maximized   = true;
-        window->orig_width  = window->width;
-        window->orig_height = window->height;
-      }
-      resize_window(_info, _info->window, width, height);
-    }
-  }
-}
-
-
-void zxdg_shell_v6_handle_ping(void* data, struct zxdg_shell_v6* xdg_shell, uint32_t serial)
-{
-  zxdg_shell_v6_pong(xdg_shell, serial);
-}
-
-void zxdg_surface_v6_configure(void* data, struct zxdg_surface_v6* xdg_surface, uint32_t serial)
-{
-  zxdg_surface_v6_ack_configure(xdg_surface, serial);
-}
-
-void zxdg_toplevel_v6_close(void* data, struct zxdg_toplevel_v6* xdg_toplevel)
-{ }
-
-void zxdg_toplevel_v6_configure(void* data, struct zxdg_toplevel_v6* xdg_toplevel,
-                                int32_t width, int32_t height, struct wl_array* states)
-{
-  InterfaceInfo* _info = data;
-  Window* window = _info->window;
-
-  uint32_t *state;
-  wl_array_for_each(state, states) {
-    if (width > 0 && height > 0) {
-      if (*state == ZXDG_TOPLEVEL_V6_STATE_MAXIMIZED ||
-          *state == ZXDG_TOPLEVEL_V6_STATE_FULLSCREEN) {
         window->maximized   = true;
         window->orig_width  = window->width;
         window->orig_height = window->height;
