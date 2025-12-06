@@ -1,6 +1,6 @@
 NAME := wayland-c-suave-samples
 
-CFLAGS := -fPIC
+CFLAGS := -std=gnu99 -fPIC
 
 SANITIZE_FLAGS := -fsanitize=undefined,address,bounds
 
@@ -9,22 +9,30 @@ PKGCONFIG_LIB_OPENGL  := wayland-egl egl glesv2
 PKGCONFIG_LIB_VULKAN  := vulkan
 PKGCONFIG_LIB_DECOR   := libdecor-0
 
-ifdef DEBUG
+ifeq ($(DEBUG),1)
 	CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
+endif
+
+ifeq ($(origin VULKAN), undefined)
+        VULKAN = 1
 endif
 
 
 filenames := wayland-01-list_interfaces \
-             wayland-02-list_interfaces-opengl_vulkan \
              wayland-03-shm_software_rendering \
              wayland-04-shm_software_rendering-redraw \
              wayland-05-accelerated_rendering-opengl \
-             wayland-06-accelerated_rendering-vulkan \
              wayland-07-input \
              wayland-08-input_shell \
              wayland-09-drag_and_drop
 
-ifdef DECOR
+ifeq ($(VULKAN),1)
+             filenames := $(filenames)\
+             wayland-02-list_interfaces-opengl_vulkan \
+             wayland-06-accelerated_rendering-vulkan
+endif
+
+ifeq ($(DECOR),1)
              filenames := $(filenames)\
              wayland-08bis-input_shell-libdecor
 endif

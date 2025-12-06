@@ -1,5 +1,9 @@
 Simple (but accurate) sample Wayland clients.
 
+Verified compatible since Wayland/Weston 1.5.0 (2014.05.20).
+Able to build with and/or use newer features: Vulkan rendering,
+xdg_toplevel_set_minimized()...
+
 
 PREREQUISITES
 -------------
@@ -16,7 +20,11 @@ PREREQUISITES
 BUILDING
 --------
   $ make
-   or
+   or to disable Vulkan samples:
+  $ VULKAN=0 make
+   or to build the libdecor sample:
+  $ DECOR=1 make
+   or to be a real gU4u:
   $ DEBUG=1 make
 
   $ make clean
