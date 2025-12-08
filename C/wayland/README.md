@@ -42,6 +42,10 @@ To be a real gU4u:
 
     DEBUG=1 make
 
+And finally, to clean:
+
+    make clean
+
 
 
 List
@@ -78,6 +82,8 @@ Displays a white square in [Software](https://wayland.app/protocols/wayland#wl_s
 
 Displays a square in [Software](https://wayland.app/protocols/wayland#wl_shm) mode, and uses the integrated [Callback](https://wayland.app/protocols/wayland#wl_surface:request:frame) mechanism to draw color pixels as fast as possible without [tearing](https://en.wikipedia.org/wiki/Screen_tearing).
 
+![wayland-04-shm_software_rendering-redraw](res/wayland-04-shm_software_rendering-redraw.png "Drawing colors on white square in Software mode")
+
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-04-shm_software_rendering-redraw.mp4))
 
 &nbsp;
@@ -85,7 +91,9 @@ Displays a square in [Software](https://wayland.app/protocols/wayland#wl_shm) mo
 
   * **[wayland-05-accelerated_rendering-opengl](wayland-05-accelerated_rendering-opengl.c)** :
 
-Displays a white-to-black blinking square in [EGL](https://en.wikipedia.org/wiki/EGL_(API))/[OpenGL](https://en.wikipedia.org/wiki/OpenGL) mode ([OpenGL ES](https://en.wikipedia.org/wiki/OpenGL_ES) is used if possible; otherwise [desktop OpenGL](https://en.wikipedia.org/wiki/OpenGL)).
+Displays a white-to-black blinking square in [EGL](https://en.wikipedia.org/wiki/EGL_(API))/[OpenGL](https://en.wikipedia.org/wiki/OpenGL) mode *([OpenGL ES](https://en.wikipedia.org/wiki/OpenGL_ES) is used if possible; otherwise [desktop OpenGL](https://en.wikipedia.org/wiki/OpenGL))*.
+
+![wayland-05-accelerated_rendering-opengl](res/wayland-05-accelerated_rendering-opengl.png "White square in OpenGL ES2 mode")
 
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-05-accelerated_rendering-opengl.mp4))
 
@@ -95,6 +103,8 @@ Displays a white-to-black blinking square in [EGL](https://en.wikipedia.org/wiki
   * **[wayland-06-accelerated_rendering-vulkan](wayland-06-accelerated_rendering-vulkan.c)** :
   
 Displays a white-to-black blinking square in [Vulkan](https://en.wikipedia.org/wiki/Vulkan) mode.
+
+![wayland-06-accelerated_rendering-vulkan](res/wayland-06-accelerated_rendering-vulkan.png "White square in Vulkan mode")
 
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-06-accelerated_rendering-vulkan.mp4))
 
@@ -106,6 +116,8 @@ Displays a white-to-black blinking square in [Vulkan](https://en.wikipedia.org/w
 Displays a white square in [Software](https://wayland.app/protocols/wayland#wl_shm) mode, showing
 [mouse](https://wayland.app/protocols/wayland#wl_pointer) position & click logs in the terminal.
 
+![wayland-07-input](res/wayland-07-input.png "Mouse coordinates on white square")
+
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-07-input.mp4))
 
 &nbsp;
@@ -116,6 +128,8 @@ Displays a white square in [Software](https://wayland.app/protocols/wayland#wl_s
 Displays a window with a custom-drawn titlebar in [Software](https://wayland.app/protocols/wayland#wl_shm) mode,
 with basic window management (a.k.a. "[shell](https://wayland.app/protocols/xdg-shell)") capabilities: move, maximize, un-maximize, minimize.\
 It also shows [mouse](https://wayland.app/protocols/wayland#wl_pointer) position & click logs in the terminal.
+
+![wayland-08-input_shell](res/wayland-08-input_shell.png "Custom-drawn titlebar & window managing")
 
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-08-input_shell.mp4))
 
@@ -130,7 +144,14 @@ Install prerequisite and build with:
 
         # Debian/Ubuntu
         sudo apt install libdecor-0-dev
+        
+        # Fedora/RHEL
+        #sudo dnf config-manager --enable crb   # RHEL only
+        sudo dnf install libdecor-devel
+        
         DECOR=1 make
+
+![wayland-08bis-input_shell-libdecor](res/wayland-08bis-input_shell-libdecor.png "Titlebar & window managing with 'libdecor'")
 
 &nbsp;
 
@@ -139,6 +160,8 @@ Install prerequisite and build with:
 
 *(Same as above, but)* with a gray square that follows the mouse, and the abilitiy to [drag & drop](https://wayland.app/protocols/wayland#wl_data_device) it from the window to another
 (such as '*weston-terminal*') to display a dynamic message.
+
+![wayland-09-drag_and_drop](res/wayland-09-drag_and_drop.png "Drag & Drop to 'weston-terminal'")
 
 ([video demo](https://github.com/Tarnyko/suave_code_samples/raw/refs/heads/master/C/wayland/res/wayland-09-drag_and_drop.mp4))
 
