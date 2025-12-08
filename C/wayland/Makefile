@@ -6,20 +6,20 @@ SANITIZE_FLAGS := -fsanitize=undefined,address,bounds
 
 PKGCONFIG_CMD         := pkg-config --cflags --libs wayland-client
 PKGCONFIG_LIB_OPENGL  := wayland-egl egl glesv2
-PKGCONFIG_LIB_VULKAN  := vulkan
 PKGCONFIG_LIB_DECOR   := libdecor-0
 
-# set VULKAN=1 if undefined
+# set VULKAN=1 as default
 ifeq ($(origin VULKAN), undefined)
-        VULKAN = 1
+	VULKAN = 1
 endif
 
 ifeq ($(VULKAN),1)
-        CFLAGS := $(CFLAGS) -DWITH_VULKAN
+	CFLAGS := $(CFLAGS) -DWITH_VULKAN
+	PKGCONFIG_LIB_VULKAN := vulkan
 endif
 
 ifeq ($(DEBUG),1)
-        CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
+	CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
 endif
 
 
