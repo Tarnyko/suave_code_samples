@@ -39,7 +39,9 @@
 #include <GLES2/gl2.h>
 
 // Vulkan
+#ifdef WITH_VULKAN
 #include <vulkan/vulkan.h>
+#endif
 
 
 typedef enum {
@@ -71,7 +73,9 @@ typedef struct {
 
 void check_egl(InterfaceInfo*, struct wl_display*);
 void check_egl_api(InterfaceInfo*, EGLDisplay, EGLenum);
+#ifdef WITH_VULKAN
 void check_vulkan(InterfaceInfo*);
+#endif
 
 
 void wl_interface_available(void*, struct wl_registry*, uint32_t, const char*, uint32_t);
@@ -106,7 +110,9 @@ int main(int argc, char* argv[])
 
     // check for EGL/Vulkan, without callbacks
     check_egl(&_info, display);
+# ifdef WITH_VULKAN
     check_vulkan(&_info);
+# endif
 
     // now this should have been filled by the registry callbacks
     printf("\nCompositor is: ");
@@ -276,6 +282,7 @@ void check_egl_api(InterfaceInfo* _info, EGLDisplay egl_display, EGLenum api)
 
 // VULKAN CHECK
 
+#ifdef WITH_VULKAN
 void check_vulkan(InterfaceInfo* _info)
 {
     uint32_t vkext_count = 0;
@@ -332,3 +339,4 @@ void check_vulkan(InterfaceInfo* _info)
 
     vkDestroyInstance(vkinstance, NULL);
 }
+#endif

@@ -9,16 +9,22 @@ PKGCONFIG_LIB_OPENGL  := wayland-egl egl glesv2
 PKGCONFIG_LIB_VULKAN  := vulkan
 PKGCONFIG_LIB_DECOR   := libdecor-0
 
-ifeq ($(DEBUG),1)
-	CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
-endif
-
+# set VULKAN=1 if undefined
 ifeq ($(origin VULKAN), undefined)
         VULKAN = 1
 endif
 
+ifeq ($(VULKAN),1)
+        CFLAGS := $(CFLAGS) -DWITH_VULKAN
+endif
+
+ifeq ($(DEBUG),1)
+        CFLAGS := $(CFLAGS) -g $(SANITIZE_FLAGS)
+endif
+
 
 filenames := wayland-01-list_interfaces \
+             wayland-02-list_interfaces-opengl_vulkan \
              wayland-03-shm_software_rendering \
              wayland-04-shm_software_rendering-redraw \
              wayland-05-accelerated_rendering-opengl \
@@ -28,7 +34,6 @@ filenames := wayland-01-list_interfaces \
 
 ifeq ($(VULKAN),1)
              filenames := $(filenames)\
-             wayland-02-list_interfaces-opengl_vulkan \
              wayland-06-accelerated_rendering-vulkan
 endif
 
