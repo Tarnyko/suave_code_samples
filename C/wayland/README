@@ -1,6 +1,6 @@
 Simple (but accurate) sample Wayland clients.
 
-Verified compatible since Wayland/Weston 1.5.0 (2014.05.20).
+Verified compatible since Wayland/Weston 1.5.0 (2014/05/20).
 Able to build with and/or use newer features: Vulkan rendering,
 xdg_toplevel_set_minimized()...
 
@@ -37,8 +37,8 @@ LIST
  Lists the current Wayland compositor's supported interfaces.
 
  * wayland-02-list_interfaces-opengl_vulkan:
- Lists the current Wayland compositor's supported interfaces,
-EGL/OpenGL(ES) & Vulkan versions.
+ Lists the current Wayland compositor's supported interfaces and
+versions EGL/OpenGL(ES) & Vulkan.
 
  * wayland-03-shm_software_rendering:
  Displays a white square in Software mode.
@@ -46,31 +46,31 @@ EGL/OpenGL(ES) & Vulkan versions.
  * wayland-04-shm_software_rendering-redraw :
  Displays a white square in Software mode, that slowly overwrites
 itself with colored artefacts (using Wayland's internal 'callback'
-mechanism for quickest-possible redraw in Software mode).
+mechanism for quickest-possible redraw without tearing).
 
  * wayland-05-accelerated_rendering-opengl :
  Displays a white square in EGL/OpenGL mode, that quickly blinks
-from White to Black -and forth. OpenGL ES is used is possible,
-otherwise desktop OpenGL.
+from White to Black and forth (OpenGL ES is used if possible;
+otherwise desktop OpenGL).
 
  * wayland-06-accelerated_rendering-vulkan :
  Displays a white square in Vulkan mode, that quickly blinks from
-Black to White -and forth.
+Black to White and forth.
 
  * wayland-07-input :
- Displays a white square in Software mode, showing logs about
-mouse position & button-clicks in the terminal.
+ Displays a white square in Software mode, showing mouse position
+& click logs in the terminal.
  
  * wayland-08-input_shell :
- Displays a window with a hand-drawn titlebar in Software mode,
-showing logs about mouse position & button-clicks in the terminal,
-AND having basic window management (aka "shell") capabilities:
-move, maximize, un-maximize, minimize.
+ Displays a window with a custom-drawn titlebar in Software mode,
+with basic window management (aka "shell") capabilities: move,
+maximize, un-maximize, minimize. It also shows mouse position &
+click logs in the terminal.
  
  * wayland-08bis-input_shell-libdecor [OPTIONAL] :
- (Same as above, but) uses the popular "libdecor" library to
-wrap and remove complicated shell code.
- [ INSTALL AND BUILD WITH:
+ (Same as above, but) uses the popular "libdecor" library to draw
+a titlebar and handle most of the shell code.
+ [ INSTALL PREREQUISITE AND BUILD WITH:
   $ sudo apt install libdecor-0-dev
   $ DECOR=1 make ]
 

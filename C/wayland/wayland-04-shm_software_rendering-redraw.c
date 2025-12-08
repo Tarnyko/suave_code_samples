@@ -158,16 +158,16 @@ int main(int argc, char* argv[])
     struct wl_registry* registry = wl_display_get_registry(display);
     assert(registry);
 
-    // attach an asynchronous callback struct (=list) with an '_info' object itself attached
+    // listen for asynchronous callbacks with an '_info' struct attached
     InterfaceInfo _info = {0};
     _info.display = display;
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
-    // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
+    // wait for a compositor roundtrip, so all callbacks are fired...
     wl_display_roundtrip(display);
     assert(_info.compositor);
 
-    // now this should have been filled by the registry callbacks
+    // ... and '_info' has now been filled by 'wl_interface_available()'
     printf("Compositor is: ");
     switch (_info.compositorId)
     {
@@ -181,20 +181,20 @@ int main(int argc, char* argv[])
     char* shell_name;
     int loop_result, result = EXIT_SUCCESS;
 
-    // no need to bother if shm (software rendering) is not available...
+    // no need to bother if 'wl_shm' (software rendering) is not available
     if (!_info.shm) {
         fprintf(stderr, "No software rendering 'wl_shm' interface found! Exiting...\n");
         goto error;
     }
 
-    // choose a shell/window manager in a most-to-less-compatible order
+    // choose a shell/window manager protocol
     if (!(shell_name = elect_shell(&_info))) {
         fprintf(stderr, "No compatible window manager/shell interface found! Exiting...\n");
         goto error;
     }
     printf("Shell/window manager: '%s'\n\n", shell_name);
 
-    // MAIN LOOP!
+    // MAIN LOOP
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
 
@@ -229,13 +229,13 @@ int main(int argc, char* argv[])
 
 char* elect_shell(InterfaceInfo* _info)
 {
-    // stable
+    // 'xdg_wm_base': stable
     if (_info->xdg_wm_base) {
         _info->shell   = _info->xdg_wm_base;
         _info->shellId = E_XDG_WM_BASE;
         xdg_wm_base_add_listener(_info->xdg_wm_base, &xdg_wm_base_listener, NULL);
         return "xdg_wm_base";
-    // deprecated but easy-to-use; for old compositors
+    // 'wl_shell': deprecated (for old compositors)
     } else if (_info->wl_shell) {
         _info->shell   = _info->wl_shell;
         _info->shellId = E_WL_SHELL;
@@ -297,10 +297,10 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base expects a commit before attaching a buffer (/!\)]
+    // [/!\ 'xdg-wm-base' expects a commit before attaching a buffer (/!\)]
     wl_surface_commit(window->surface);
 
-    // [/!\ xdg-wm-base expects a configure event before attaching a buffer (/!\)]
+    // [/!\ 'xdg-wm-base' expects a configure event before attaching a buffer (/!\)]
     wl_display_roundtrip(_info->display);
 
     for (size_t b = 0; b < BUFFER_COUNT; b++)
@@ -333,7 +333,7 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
         memset(buffer->data, 0xFF, width * height * 4);
     }
 
-    // we do not call 'redraw' from the main loop, because 
+    // first 'redraw_window()' will call itself infinitely through 'wl_callback'
     redraw_window(window, window->buffers[0]);
 
     return window;

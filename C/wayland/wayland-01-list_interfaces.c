@@ -64,14 +64,14 @@ int main(int argc, char* argv[])
     struct wl_registry* registry = wl_display_get_registry(display);
     assert(registry);
 
-    // attach an asynchronous callback struct (=list) with an '_info' object itself attached
+    // listen for asynchronous callbacks with an '_info' struct attached
     InterfaceInfo _info = {0};
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
-    // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
+    // wait for a compositor roundtrip, so all callbacks are fired...
     wl_display_roundtrip(display);
 
-    // now this should have been filled by the registry callbacks
+    // ... and '_info' has now been filled by 'wl_interface_available()'
     printf("\nCompositor is: ");
     switch (_info.id)
     {

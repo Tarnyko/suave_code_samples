@@ -175,16 +175,16 @@ int main(int argc, char* argv[])
     struct wl_registry* registry = wl_display_get_registry(display);
     assert(registry);
 
-    // attach an asynchronous callback struct (=list) with an '_info' object itself attached
+    // listen for asynchronous callbacks with an '_info' struct attached
     InterfaceInfo _info = {0};
     _info.display = display;
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
-    // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
+    // wait for a compositor roundtrip, so all callbacks are fired...
     wl_display_roundtrip(display);
     assert(_info.compositor);
 
-    // now this should have been filled by the registry callbacks
+    // ... and '_info' has now been filled by 'wl_interface_available()'
     printf("Compositor is: ");
     switch (_info.compositorId)
     {
@@ -195,13 +195,13 @@ int main(int argc, char* argv[])
         default       : printf("Unknown...\n\n");
     }
 
-    // no need to bother if shm (software rendering) is not available...
+    // no need to bother if 'wl_shm' (software rendering) is not available
     if (!_info.shm) {
         fprintf(stderr, "No software rendering 'wl_shm' interface found! Exiting...\n");
         goto error;
     }
 
-    // look for the mouse, and warn if it is missing
+    // look for the mouse, and warn if missing
     if (!_info.seat) {
         fprintf(stderr, "No input 'wl_seat' interface found! The example will run, but lack purpose.\n");
     } else {
@@ -212,12 +212,12 @@ int main(int argc, char* argv[])
             fprintf(stderr, "No mouse found! The example will run, but lack purpose.\n"); }
     }
 
-    // MAIN LOOP!
+    // MAIN LOOP
     int loop_result, result = EXIT_SUCCESS;
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
 
-        // if feasible, attach the window to pointer events
+        // listen for mouse events
         if (_info.pointer) {
             wl_pointer_add_listener(_info.pointer, &wl_pointer_listener, &_info); }
 
@@ -347,7 +347,7 @@ void destroy_window_buffer(InterfaceInfo* _info, Window* window)
 
 void resize_window(InterfaceInfo* _info, Window* window, int width, int height)
 {
-  // [/!\ xdg-wm-base: acknowledge previous state (maximized?) before resize (/!\)]
+  // [/!\ 'xdg-wm-base': acknowledge previous state (maximized?) before resize (/!\)]
   wl_display_roundtrip(_info->display);
 
   destroy_window_buffer(_info, window);

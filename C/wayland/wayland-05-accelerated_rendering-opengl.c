@@ -34,7 +34,7 @@
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
 
-// EGL (OpenGL, OpenGL ES)
+// EGL (OpenGL/OpenGL ES)
 #include <wayland-egl.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -149,16 +149,16 @@ int main(int argc, char* argv[])
     struct wl_registry* registry = wl_display_get_registry(display);
     assert(registry);
 
-    // attach an asynchronous callback struct (=list) with an '_info' object itself attached
+    // listen for asynchronous callbacks with an '_info' struct attached
     InterfaceInfo _info = {0};
     _info.display = display;
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
-    // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
+    // wait for a compositor roundtrip, so all callbacks are fired...
     wl_display_roundtrip(display);
     assert(_info.compositor);
 
-    // now this should have been filled by the registry callbacks
+    // ... and '_info' has now been filled by 'wl_interface_available()'
     printf("Compositor is: ");
     switch (_info.compositorId)
     {
@@ -172,21 +172,21 @@ int main(int argc, char* argv[])
     char* shell_name;
     int loop_result, result = EXIT_SUCCESS;
 
-    // choose a shell/window manager in a most-to-less-compatible order
+    // choose a shell/window manager protocol
     if (!(shell_name = elect_shell(&_info))) {
         fprintf(stderr, "No compatible window manager/shell interface found! Exiting...\n");
         goto error;
     }
     printf("Shell/window manager: '%s'\n\n", shell_name);
 
-    // check & initiliaze EGL
+    // check & initiliaze EGL/OpenGL
     initialize_egl(&_info, display);
     if (!_info.has_egl || (!_info.has_opengl && !_info.has_opengles)) {
         fprintf(stderr, "No valid EGL/OpenGL(ES) implementation found! Exiting...\n");
         goto error;
     }
 
-    // MAIN LOOP!
+    // MAIN LOOP
     {
         Window* window = create_window(&_info, argv[0], 320, 240);
 
@@ -225,13 +225,13 @@ int main(int argc, char* argv[])
 
 char* elect_shell(InterfaceInfo* _info)
 {
-    // stable
+    // 'xdg_wm_base': stable
     if (_info->xdg_wm_base) {
         _info->shell   = _info->xdg_wm_base;
         _info->shellId = E_XDG_WM_BASE;
         xdg_wm_base_add_listener(_info->xdg_wm_base, &xdg_wm_base_listener, NULL);
         return "xdg_wm_base";
-    // deprecated but easy-to-use; for old compositors
+    // 'wl_shell': deprecated (for old compositors)
     } else if (_info->wl_shell) {
         _info->shell   = _info->wl_shell;
         _info->shellId = E_WL_SHELL;
@@ -364,10 +364,10 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->shell_surface = create_shell_surface(_info, window->surface, title);
     assert(window->shell_surface);
 
-    // [/!\ xdg-wm-base expects a commit before redrawing (/!\)]
+    // [/!\ 'xdg-wm-base' expects a commit before redrawing (/!\)]
     wl_surface_commit(window->surface);
 
-    // [/!\ xdg-wm-base expects a configure event before redrawing (/!\)]
+    // [/!\ 'xdg-wm-base' expects a configure event before redrawing (/!\)]
     wl_display_roundtrip(_info->display);
 
     return window;
@@ -377,7 +377,7 @@ void redraw_window(InterfaceInfo* _info, Window* window)
 {
     static float color[3] = { 1.0, 1.0, 1.0 };   // =White (RGB)
 
-    // these functions are common to OpenGL<->OpenGLES
+    // these drawing functions are common to OpenGL & OpenGLES
     glViewport(0, 0, window->width, window->height);
     glClearColor(color[0], color[1], color[2], 0.0);
     glClear(GL_COLOR_BUFFER_BIT);

@@ -33,7 +33,7 @@
 // Wayland
 #include <wayland-client.h>
 
-// EGL (OpenGL, OpenGL ES)
+// EGL (OpenGL/OpenGL ES)
 #include <wayland-egl.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -101,20 +101,20 @@ int main(int argc, char* argv[])
     struct wl_registry* registry = wl_display_get_registry(display);
     assert(registry);
 
-    // attach an asynchronous callback struct (=list) with an '_info' object itself attached
+    // listen for asynchronous callbacks with an '_info' struct attached
     InterfaceInfo _info = {0};
     wl_registry_add_listener(registry, &wl_registry_listener, &_info);
 
-    // sync-wait for a compositor roundtrip, so all callbacks are fired (see 'WL_REGISTRY_CALLBACKS' below)
+    // wait for a compositor roundtrip, so all callbacks are fired...
     wl_display_roundtrip(display);
 
-    // check for EGL/Vulkan, without callbacks
+    // ... and we can ask for Mesa APIs (EGL/OpenGL & Vulkan)...
     check_egl(&_info, display);
 # ifdef WITH_VULKAN
     check_vulkan(&_info);
 # endif
 
-    // now this should have been filled by the registry callbacks
+    // ... and '_info' has also been filled by 'wl_interface_available()'
     printf("\nCompositor is: ");
     switch (_info.id)
     {
@@ -125,7 +125,6 @@ int main(int argc, char* argv[])
         default       : printf("Unknown...\n\n");
     }
 
-    //now this should have been filled by the rest
     if (_info.has_egl) {
         printf("EGL version:\t\t\t %d.%d [%s]\n", _info.egl_major, _info.egl_minor, _info.egl_vendor);
 
@@ -199,7 +198,7 @@ void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t ser
 { }
 
 
-// EGL CHECK (OPENGL, OPENGL ES)
+// EGL CHECK (OPENGL/OPENGL ES)
 
 void check_egl(InterfaceInfo* _info, struct wl_display* display)
 {
@@ -280,9 +279,9 @@ void check_egl_api(InterfaceInfo* _info, EGLDisplay egl_display, EGLenum api)
 }
 
 
+#ifdef WITH_VULKAN
 // VULKAN CHECK
 
-#ifdef WITH_VULKAN
 void check_vulkan(InterfaceInfo* _info)
 {
     uint32_t vkext_count = 0;
