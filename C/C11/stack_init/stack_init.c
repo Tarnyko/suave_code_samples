@@ -92,13 +92,15 @@ static int test_stack_init(void*)
     if (!non_optimizable_condition()) {
       goto error; } // will always happen
 
+    // we never reach this...
     char* str = strdup("Test");
     puts(str);
 
     goto end;
 
   error:
-    if (str) {        // can happen with '-O0'
+    // ... but we sometimes reach this (str!=NULL)
+    if (str != NULL) {
         puts(" 'str' is non-NULL.");
         //free(str);  // would end badly...!
     } else {
@@ -121,13 +123,13 @@ int main(int argc, char* argv[])
     test_stack_init(NULL);
 
     {
-        // overwrite the stack manually with zeros
+        // overwrite the whole stack manually with zeros
         size_t stack_size = get_stack_size(false);
         char filler[stack_size-32768]; // 32k is a secure margin
         memset_s(filler, sizeof(filler), 0, sizeof(filler));
     }
 
-    // mostly zero-initialized now
+    // 99% zero-initialized now
     test_stack_init(NULL);
 
 
