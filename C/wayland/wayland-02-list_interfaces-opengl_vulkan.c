@@ -169,27 +169,41 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
 
     InterfaceInfo* _info = data;
 
-         if (!strcmp(name, "wl_shm"))                  { printf("\t\t\t [Software rendering]");                               }
-    else if (!strcmp(name, "wl_seat"))                 { printf("\t\t\t [Input devices (keyboard, mouse, touch)]");           }
-    else if (!strcmp(name, "wl_output"))               { printf("\t\t\t [Output devices (screens)]");                         }
-    else if (!strcmp(name, "wl_data_device_manager"))  { printf("    \t [Clibpoard (copy-paste, drag-drop)]");                }
-    else if (!strcmp(name, "wp_viewporter"))           { printf("  \t\t [Surface scaling]");                                  }
-    else if (!strcmp(name, "wp_presentation"))         { printf("  \t\t [Precise video synchronization]");                    }
-    else if (strstr(name,  "wp_idle_inhibit_manager")) { printf("\b\b\t [Screensaver inhibiter]");                            }
-    else if (strstr(name,  "wp_text_input_manager"))   { printf("\b\b\t [Virtual keyboard]");                                 }
-    else if (strstr(name,  "wp_pointer_constraints"))  { printf("\b\b\t [Pointer lock]");                                     }
-    else if (strstr(name,  "wp_linux_dmabuf"))         { printf("    \t [DRM kernel GPU channel]");                           }
-    else if (!strcmp(name, "wl_drm"))                  { printf("\t\t\t [DRM kernel GPU channel -deprecated]");               }
-    else if (!strcmp(name, "wl_shell"))                { printf("\t\t\t [Standard window manager -deprecated]");              }
-    else if (!strcmp(name, "xdg_wm_base"))             { printf("\t\t\t [Standard window manager]");                          }
-    else if (strstr(name,  "xdg_shell"))               { printf("  \t\t [Standard window manager -unstable]");                }
-    else if (strstr(name,  "gtk_shell"))               { printf("  \t\t [GNOME window manager]");      _info->id = E_GNOME;   }
-    else if (strstr(name,  "plasma_shell"))            { printf("  \t\t [KDE Plasma window manager]"); _info->id = E_KDE;     }
-    else if (strstr(name,  "wlr_layer_shell"))         { printf("    \t [wlroots window manager]");    _info->id = E_WLROOTS; }
-    else if (strstr(name,  "weston"))                  {                                               _info->id = E_WESTON;  }
-    else if (!strcmp(name, "wl_subcompositor"))        { printf("  \t\t [Sub-surfaces]");                                     }
-    else if (!strcmp(name, "wl_compositor"))           { printf("  \t\t [Compositor]");                _info->compositor =
-                                                     wl_registry_bind(registry, serial, &wl_compositor_interface, version);   }
+         if (!strcmp(name, "wl_shm"))                     { printf("\t\t\t [Software rendering]");                               }
+    else if (!strcmp(name, "wl_seat"))                    { printf("\t\t\t [Input devices (keyboard, mouse, touch)]");           }
+    else if (!strcmp(name, "wl_output"))                  { printf("\t\t\t [Output devices (screens)]");                         }
+    else if (!strcmp(name, "wl_data_device_manager"))     { printf("    \t [Clibpoard (copy-paste, drag-drop)]");                }
+    else if (!strcmp(name, "wp_viewporter"))              { printf("  \t\t [Surface scaling]");                                  }
+    else if (!strcmp(name, "wp_presentation"))            { printf("  \t\t [Precise video synchronization -old]");               }
+    else if (strstr(name,  "wp_fifo_manager"))            { printf("  \b\t [Precise video synchronization]");                   }
+    else if (strstr(name,  "wp_tearing_control_manager")) { printf("\b\b\t [Tearing control]");                                  }
+    else if (strstr(name,  "wp_idle_inhibit_manager"))    { printf("\b\b\t [Screensaver inhibiter]");                            }
+    else if (strstr(name,  "wp_tablet_manager"))          { printf("    \t [Graphics tablet input]");                            }
+    else if (strstr(name,  "wp_text_input_manager"))      { printf("\b\b\t [Virtual keyboard]");                                 }
+    else if (strstr(name,  "wp_pointer_gestures"))        { printf("\b\b\t [Touchpad gestures]");                                }
+    else if (strstr(name,  "wp_pointer_constraints"))     { printf("\b\b\t [Pointer lock]");                                     }
+    else if (strstr(name,  "wp_relative_pointer_manager")){ printf("\b\b\b [Pointer lock movement]");                            }
+    else if (strstr(name,  "wp_linux_dmabuf"))            { printf("    \t [DRM Kernel GPU channel]");                           }
+    else if (!strcmp(name, "wl_drm"))                     { printf("\t\t\t [DRM kernel GPU channel -deprecated]");               }
+    else if (!strcmp(name, "wl_shell"))                   { printf("\t\t\t [Standard window manager -deprecated]");              }
+    else if (!strcmp(name, "xdg_wm_base"))                { printf("\t\t\t [Standard window manager]");                          }
+    else if (strstr(name,  "xdg_shell"))                  { printf("  \t\t [Standard window manager -unstable]");                }
+    else if (strstr(name,  "gtk_shell"))                  { printf("  \t\t [GNOME window manager]");      _info->id = E_GNOME;   }
+    else if (strstr(name,  "plasma_shell"))               { printf("  \t\t [KDE Plasma window manager]"); _info->id = E_KDE;     }
+    else if (strstr(name,  "wlr_layer_shell"))            { printf("    \t [wlroots window manager]");    _info->id = E_WLROOTS; }
+    else if (strstr(name,  "weston"))                     {                                               _info->id = E_WESTON;  }
+    else if (strstr(name,  "zxdg_exporter_v2"))           { printf("    \t [Foreign client surface export]");                    }
+    else if (strstr(name,  "zxdg_importer_v2"))           { printf("    \t [Foreign client surface import]");                    }
+    else if (strstr(name,  "zxdg_exporter_v1"))           { printf("    \t [Foreign client surface export -old]");               }
+    else if (strstr(name,  "zxdg_importer_v1"))           { printf("    \t [Foreign client surface import -old]");               }
+    else if (strstr(name,  "xdg_activation"))             { printf("    \t [Window focus switcher]");                            }
+    else if (strstr(name,  "xdg_output_manager"))         { printf("\b\b\t [Output devices (screens) dimensions]");              }
+    else if (strstr(name,  "xdg_decoration_manager"))     { printf("\b\b\t [Server-side window decorations]");                   }
+    else if (strstr(name,  "ext_idle_notifier"))          { printf("    \t [Client-side idle notifier]");                        }
+    else if (strstr(name,  "ext_workspace_manager"))      { printf("\b\b\t [Virtual desktops]");                                 }
+    else if (!strcmp(name, "wl_subcompositor"))           { printf("  \t\t [Sub-surfaces]");                                     }
+    else if (!strcmp(name, "wl_compositor"))              { printf("  \t\t [Compositor]");                _info->compositor =
+                                                        wl_registry_bind(registry, serial, &wl_compositor_interface, version);   }
 
     putchar('\n');
 }
