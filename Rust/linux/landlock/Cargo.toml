@@ -1,0 +1,23 @@
+#  Run with:
+# cargo run -- /tmp/my_allowed_file
+# cargo run -- $HOME/my_denied_file
+#  To disable:
+# cargo run --no-default-features -- $HOME/my_denied_file
+
+[package]
+name = "linux-landlock"
+version = "0.1.0"
+authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
+edition = "2021"
+rust-edition = "1.68"
+description = "Example of using the Linux Landlock security API"
+repository = "https://github.com/Tarnyko/suave_code_samples"
+homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/linux/landlock"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+landlock = "0.4.0"
+
+[features]
+default = ["landlock"]
+landlock = []
