@@ -39,6 +39,7 @@
 // Wayland headers
 #include <wayland-client.h>
 #include "_deps/xdg-wm-base-client-protocol.h"
+#include "_deps/xdg-decoration-unstable-v1-client-protocol.h"
 
 
 char *os_button_code_to_string(uint32_t code)
@@ -82,9 +83,10 @@ typedef struct {
 } Buffer;
 
 typedef struct {
-    Buffer              buffer;          // Raw/Wayland buffer mapped to...
-    struct wl_surface*  surface;         // ...a Wayland surface object...
-    void*               shell_surface;   // ...handled by a window manager.
+    Buffer              buffer;           // Raw/Wayland buffer mapped to...
+    struct wl_surface*  surface;          // ...a Wayland surface object...
+    void*               shell_surface;    // ...handled by a window manager...
+    void*               shell_decoration; // ...with optional decorations.
 
     ZoneId              active_zone;
     uint32_t            pointer_pressed_serial;
@@ -109,6 +111,7 @@ typedef struct {
     void*                 shell;         // 'shell': window manager
     struct wl_shell*      wl_shell;      //  (among: - deprecated
     struct xdg_wm_base*   xdg_wm_base;   //          - current stable)
+    struct zxdg_decoration_manager_v1* xdg_decoration_manager;
 
     struct wl_shm*        shm;           // 'shared mem': software renderer
 
@@ -131,6 +134,7 @@ void destroy_window(InterfaceInfo*, Window*);
 void create_window_buffer(InterfaceInfo*, Window*);
 void destroy_window_buffer(InterfaceInfo*, Window*);
 void resize_window(InterfaceInfo*, Window*, int, int);
+void shell_try_decorate_window(InterfaceInfo*, Window*);
 void decorate_window(Window*);
 
 
@@ -201,6 +205,12 @@ void xdg_toplevel_close(void*, struct xdg_toplevel*);
 static const struct xdg_toplevel_listener xdg_toplevel_listener = {
     xdg_toplevel_configure,
     xdg_toplevel_close
+};
+
+void xdg_toplevel_decoration_configure(void*, struct zxdg_toplevel_decoration_v1*, uint32_t);
+
+static const struct zxdg_toplevel_decoration_v1_listener xdg_toplevel_decoration_listener = {
+    xdg_toplevel_decoration_configure,
 };
 
 
@@ -287,6 +297,8 @@ int main(int argc, char* argv[])
   error:
     result = EXIT_FAILURE;
   end:
+    if (_info.xdg_decoration_manager) {
+        zxdg_decoration_manager_v1_destroy(_info.xdg_decoration_manager); }
     if (_info.xdg_wm_base) {
         xdg_wm_base_destroy(_info.xdg_wm_base); }
     if (_info.wl_shell) {
@@ -440,7 +452,10 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 
     create_window_buffer(_info, window);
 
-    decorate_window(window);
+    // try server-side decorations, otherwise draw our own
+    shell_try_decorate_window(_info, window);
+    if (!window->shell_decoration) {
+        decorate_window(window); }
 
     wl_surface_damage(window->surface, 0, 0, width, height);
     wl_surface_commit(window->surface);
@@ -452,6 +467,11 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
 void destroy_window(InterfaceInfo* _info, Window* window)
 {
     destroy_window_buffer(_info, window);
+
+    if (window->shell_decoration) {
+        zxdg_toplevel_decoration_v1_destroy(
+          (struct zxdg_toplevel_decoration_v1*) window->shell_decoration);
+    }
 
     destroy_shell_surface(_info, window->shell_surface);
 
@@ -520,10 +540,23 @@ void resize_window(InterfaceInfo* _info, Window* window, int width, int height)
 
   create_window_buffer(_info, window);
 
-  decorate_window(window);
+  if (!window->shell_decoration) {
+      decorate_window(window); }
 
   wl_surface_damage(window->surface, 0, 0, width, height);
   wl_surface_commit(window->surface);
+}
+
+void shell_try_decorate_window(InterfaceInfo* _info, Window* window)
+{
+    if (!_info->xdg_decoration_manager || getenv("CSD")) {
+        return; }
+
+    window->shell_decoration =
+      zxdg_decoration_manager_v1_get_toplevel_decoration(_info->xdg_decoration_manager,
+                                          (struct xdg_toplevel*) window->shell_surface);
+    zxdg_toplevel_decoration_v1_add_listener((struct zxdg_toplevel_decoration_v1*)
+                     window->shell_decoration, &xdg_toplevel_decoration_listener, NULL);
 }
 
 void decorate_window(Window* window)
@@ -564,7 +597,9 @@ void wl_interface_available(void* data, struct wl_registry* registry, uint32_t s
     } else if (strstr(name, "gtk_shell"))       { _info->compositorId = E_GNOME;
     } else if (strstr(name, "plasma_shell"))    { _info->compositorId = E_KDE;
     } else if (strstr(name, "wlr_layer_shell")) { _info->compositorId = E_WLROOTS;
-    } else if (strstr(name, "weston"))          { _info->compositorId = E_WESTON; }
+    } else if (strstr(name, "weston"))          { _info->compositorId = E_WESTON;
+    } else if (!strcmp(name, "zxdg_decoration_manager_v1")) { _info->xdg_decoration_manager =
+        wl_registry_bind(registry, serial, &zxdg_decoration_manager_v1_interface, 1); }
 }
 
 void wl_interface_removed(void* data, struct wl_registry* registry, uint32_t serial)
@@ -607,7 +642,7 @@ void wl_pointer_handle_motion(void* data, struct wl_pointer* pointer, uint32_t s
   int y = wl_fixed_to_int(sy);
   printf("Mouse moves at: %d:%d\n", x, y);
 
-  if (y > TITLEBAR_HEIGHT) {
+  if (window->shell_decoration || y > TITLEBAR_HEIGHT) {
       window->active_zone = E_MAIN;
   } else {
     if (x > (window->width - (E_CLOSE * TITLEBAR_HEIGHT))) {
@@ -692,8 +727,14 @@ void xdg_surface_configure(void* data, struct xdg_surface* xdg_surface, uint32_t
   xdg_surface_ack_configure(xdg_surface, serial);
 }
 
+// only used with server-side decorations
 void xdg_toplevel_close(void* data, struct xdg_toplevel* xdg_toplevel)
-{ }
+{
+  InterfaceInfo* _info = data;
+  Window* window = _info->window;
+
+  window->wants_to_be_closed = true;
+}
 
 void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
                             int32_t width, int32_t height, struct wl_array* states)
@@ -714,5 +755,15 @@ void xdg_toplevel_configure(void* data, struct xdg_toplevel* xdg_toplevel,
       resize_window(_info, _info->window, width, height);
     }
   }
+}
+
+void xdg_toplevel_decoration_configure(void* data,
+                                       struct zxdg_toplevel_decoration_v1* decoration,
+                                       uint32_t mode)
+{
+    zxdg_toplevel_decoration_v1_set_mode(decoration,
+      getenv("CSD")
+      ? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
+      : mode);
 }
 
