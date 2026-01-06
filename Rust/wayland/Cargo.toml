@@ -1,0 +1,17 @@
+[package]
+name = "wayland-01-list_interfaces"
+version = "0.1.0"
+authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
+edition = "2021"
+rust-edition = "1.65"
+description = "Wayland API samples"
+repository = "https://github.com/Tarnyko/suave_code_samples"
+homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/wayland"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+wayland-client = "0.31.0"
+
+[features]
+default = []
+libdecor = []
