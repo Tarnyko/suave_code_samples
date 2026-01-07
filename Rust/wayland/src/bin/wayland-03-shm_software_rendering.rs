@@ -96,12 +96,12 @@ fn main() -> Result<(), Box<dyn Error>>
         Ok(shell_name) => println!("Shell: '{}'\n", shell_name),
     }
 
-    match create_window(&mut info, &args[0], 320, 240) {
+    match create_window(&mut info, queue, &args[0], 320, 240) {
         Err(e)         => {
             let msg = format!("Could not create window: {}! Exiting...", e); 
             return Err(msg.into());
         },
-        Ok(mut window) => {
+        Ok((mut window, mut queue)) => {
             // MAIN LOOP
             println!("Looping...\n");
             loop {
@@ -154,9 +154,9 @@ fn create_shell_surface(info: &InterfaceInfo,
     }
 }
 
-fn create_window(info: &mut InterfaceInfo, title: &str, width: i32, height:i32) -> Result<Window, String>
+fn create_window(info: &mut InterfaceInfo, mut queue: EventQueue<InterfaceInfo>, title: &str,
+                 width: i32, height:i32) -> Result<(Window, EventQueue<InterfaceInfo>), String>
 {
-    let shm = info.shm.as_ref().unwrap();
     let Some(compositor) = &info.compositor else {
         return Err("compositor interface not found".to_string());};
 
@@ -169,7 +169,7 @@ fn create_window(info: &mut InterfaceInfo, title: &str, width: i32, height:i32) 
     surface.commit();
 
     // [/!\ 'xdg-wm-base' expects a configure event before attaching a buffer (/!\)]
-    //queue.roundtrip(&mut info).unwrap();
+    queue.roundtrip(info).unwrap();
 
     // 1) create a POSIX shared memory object (name must contain a single '/')
     let shm_name = "/".to_string() + &title.replace("/", "");
@@ -185,6 +185,7 @@ fn create_window(info: &mut InterfaceInfo, title: &str, width: i32, height:i32) 
     write(fd.as_raw_fd(), &data).unwrap();
 
     // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
+    let shm = info.shm.as_ref().unwrap();
     let pool = shm.create_pool(fd.as_fd(), width * height * 4, &info.queue_h, ());
     // and create the final 'wl_buffer' abstraction
     let buf = pool.create_buffer(0, width, height, width * 4,
@@ -199,7 +200,7 @@ fn create_window(info: &mut InterfaceInfo, title: &str, width: i32, height:i32) 
     let window = Window { buffer: buffer, _surface: surface,
                           _shell_surface: shell_surface,
                           _width: width, _height: height};
-    Ok(window)
+    Ok((window, queue))
 }
 
 fn destroy_window(window: &mut Window)
