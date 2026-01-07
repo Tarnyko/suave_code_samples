@@ -33,9 +33,8 @@ fn main() -> Result<(), Box<dyn Error>>
 
         let path_rules_ref = &mut path_rules;
         let Ok(_) = path_rules_ref.add_rules(path_beneath_rules(
-                                         vec![OsStr::new("/tmp")],
-                                         AccessFs::from_read(abi))
-                                    ) else {
+                      vec![OsStr::new("/tmp")], AccessFs::from_read(abi)
+                    )) else {
             return Err("Could not add Landlock path rule, exiting...".into()); };
 
         let Ok(_) = path_rules.restrict_self() else {

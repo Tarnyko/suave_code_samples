@@ -8,7 +8,7 @@ use wayland_client::{
 
 const BS: char = 8u8 as char;
 
-enum CompositorId { UNKNOWN, WESTON, GNOME, KDE, WLROOTS }
+enum CompositorId { Unknown, Weston, GNOME, KDE, WlRoots }
 
 struct InterfaceInfo { id: CompositorId }
 
@@ -26,21 +26,21 @@ fn main() -> Result<(), Box<dyn Error>>
 
     // listen for asynchronous callbacks with an 'InterfaceInfo' struct attached
     let mut queue: EventQueue<InterfaceInfo> = connection.new_event_queue();
-    let queueh = queue.handle(); 
-    display.get_registry(&queueh, ());
+    let queue_h = queue.handle();
+    display.get_registry(&queue_h, ());
 
     // wait for a compositor roundtrip, so all callbacks are fired...
-    let mut info = InterfaceInfo { id: CompositorId::UNKNOWN };
+    let mut info = InterfaceInfo { id: CompositorId::Unknown };
     queue.roundtrip(&mut info).unwrap();
 
     // .. and 'info' has now been filled by 'Dispatch<> -> event()'
     print!("\nCompositor is: ");
     match info.id
     {
-        CompositorId::WESTON  => println!("Weston.\n"),
+        CompositorId::Weston  => println!("Weston.\n"),
         CompositorId::GNOME   => println!("GNOME.\n"),
         CompositorId::KDE     => println!("KDE Plasma.\n"),
-        CompositorId::WLROOTS => println!("wlroots.\n"),
+        CompositorId::WlRoots => println!("wlroots.\n"),
         _                     => println!("Unknown...\n")
     }
 
@@ -52,11 +52,8 @@ fn main() -> Result<(), Box<dyn Error>>
 
 impl Dispatch<wl_registry::WlRegistry, ()> for InterfaceInfo {
   fn event(this: &mut Self,
-           _: &wl_registry::WlRegistry,
-           event: wl_registry::Event,
-           _: &(),
-           _: &Connection,
-           _: &QueueHandle<InterfaceInfo>)
+           _: &wl_registry::WlRegistry, event: wl_registry::Event,
+           _: &(), _: &Connection, _: &QueueHandle<InterfaceInfo>)
   {
       if let wl_registry::Event::Global { interface, version, .. } = event {
           print!("Interface available: name:'{}' - version:'{}'.", interface, version);
@@ -86,8 +83,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for InterfaceInfo {
             _ if interface.contains("plasma_shell")               => { print!(  "  \t\t [KDE Plasma window manager]");
                                                                        this.id = CompositorId::KDE },
             _ if interface.contains("wlr_layer_shell")            => { print!(  "  \t\t [wlroots window manager]");
-                                                                       this.id = CompositorId::WLROOTS },
-            _ if interface.contains("weston")                     => { this.id = CompositorId::WESTON },
+                                                                       this.id = CompositorId::WlRoots },
+            _ if interface.contains("weston")                     => { this.id = CompositorId::Weston },
             _ if interface.contains("zxdg_exporter_v2")           => print!(   "     \t [Foreign client surface export]"),
             _ if interface.contains("zxdg_importer_v2")           => print!(   "     \t [Foreign client surface import]"),
             _ if interface.contains("zxdg_exporter_v1")           => print!(   "     \t [Foreign client surface export -old]"),

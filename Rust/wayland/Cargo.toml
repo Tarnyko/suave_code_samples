@@ -1,5 +1,13 @@
+#  Run with:
+# cargo run --bin wayland-01-list_interfaces
+# cargo run --bin wayland-02-list_interfaces-opengl_vulkan
+# cargo run --bin wayland-02-list_interfaces-opengl_vulkan --no-default-features
+# cargo run --bin wayland-03-shm_software_rendering
+# ...
+# cargo run --bin wayland-08bis-input_shell-libdecor --features libdecor
+
 [package]
-name = "wayland-01-list_interfaces"
+name = "wayland-samples"
 version = "0.1.0"
 authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
 edition = "2021"
@@ -10,8 +18,16 @@ homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/wayla
 license = "GPL-3.0-or-later"
 
 [dependencies]
-wayland-client = "0.31.0"
+nix = { version = "0.27", features = ["mman", "fs"] }
+wayland-client = { version = "0.31.0" }
+wayland-protocols = { version = "0.32.0" , features = ["client"] }
 
 [features]
-default = []
+default = ["vulkan"]
+vulkan = []
 libdecor = []
+
+#[[bin]]
+#name = "wayland-08bis-input_shell-libdecor"
+#path = "src/bin/wayland-08bis-input_shell-libdecor.rs"
+#required-features = ["libdecor"]
