@@ -65,8 +65,9 @@ typedef struct {
     Buffer*             buffers[BUFFER_COUNT];
     Buffer*             current;         // Raw/Wayland buffer waiting for...
     struct wl_callback* callback;        // ...a redraw callback that fires...
-    struct wl_surface*  surface;         // ...on a raw Wayland surface...
+    struct wl_surface*  surface;         // ...on a Wayland surface object...
     void*               shell_surface;   // ...handled by a window manager.
+    bool                shell_surface_is_configured;
 
     int                 width;
     int                 height;
@@ -89,7 +90,7 @@ typedef struct {
 
 
 char* elect_shell(InterfaceInfo*);
-void* create_shell_surface(InterfaceInfo*, struct wl_surface*, char*);
+void* create_shell_surface(InterfaceInfo*, Window*, char*);
 void destroy_shell_surface(InterfaceInfo*, void*);
 
 Window* create_window(InterfaceInfo*, char*, int, int);
@@ -245,24 +246,25 @@ char* elect_shell(InterfaceInfo* _info)
     return NULL;
 }
 
-void* create_shell_surface(InterfaceInfo* _info, struct wl_surface* surface, char* arg)
+void* create_shell_surface(InterfaceInfo* _info, Window* window, char* arg)
 {
    switch(_info->shellId)
    {
      case E_WL_SHELL:
      {
-       struct wl_shell_surface* shell_surface = wl_shell_get_shell_surface((struct wl_shell*) _info->shell, surface);
+       struct wl_shell_surface* shell_surface = wl_shell_get_shell_surface((struct wl_shell*) _info->shell, window->surface);
        assert(shell_surface);
        wl_shell_surface_add_listener(shell_surface, &wl_shell_surface_listener, NULL);
        wl_shell_surface_set_title(shell_surface, arg);
        wl_shell_surface_set_toplevel(shell_surface);
+       window->shell_surface_is_configured = true;
        return shell_surface;
      }
      case E_XDG_WM_BASE:
      {
-       struct xdg_surface* xdg_surface = xdg_wm_base_get_xdg_surface((struct xdg_wm_base*) _info->shell, surface);
+       struct xdg_surface* xdg_surface = xdg_wm_base_get_xdg_surface((struct xdg_wm_base*) _info->shell, window->surface);
        assert(xdg_surface);
-       xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, NULL);
+       xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, window);
        struct xdg_toplevel* xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
        assert(xdg_toplevel);
        xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, NULL);
@@ -294,14 +296,15 @@ Window* create_window(InterfaceInfo* _info, char* title, int width, int height)
     window->surface = wl_compositor_create_surface(_info->compositor);
     assert(window->surface);
     
-    window->shell_surface = create_shell_surface(_info, window->surface, title);
+    window->shell_surface = create_shell_surface(_info, window, title);
     assert(window->shell_surface);
 
     // [/!\ 'xdg-wm-base' expects a commit before attaching a buffer (/!\)]
     wl_surface_commit(window->surface);
 
     // [/!\ 'xdg-wm-base' expects a configure event before attaching a buffer (/!\)]
-    wl_display_roundtrip(_info->display);
+    while (!window->shell_surface_is_configured) {
+        wl_display_roundtrip(_info->display); }
 
     for (size_t b = 0; b < BUFFER_COUNT; b++)
     {
@@ -444,7 +447,11 @@ void xdg_wm_base_handle_ping(void* data, struct xdg_wm_base* xdg_wm_base, uint32
 { xdg_wm_base_pong(xdg_wm_base, serial); }
 
 void xdg_surface_configure(void* data, struct xdg_surface* xdg_surface, uint32_t serial)
-{ xdg_surface_ack_configure(xdg_surface, serial); }
+{
+    Window* window = data;
+    window->shell_surface_is_configured = true;
+    xdg_surface_ack_configure(xdg_surface, serial);
+}
 
 void xdg_toplevel_close(void* data, struct xdg_toplevel* xdg_toplevel)
 { }

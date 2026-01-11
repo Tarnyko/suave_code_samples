@@ -101,6 +101,6 @@ impl Dispatch<wl_registry::WlRegistry, ()> for InterfaceInfo {
 
           println!("");
       }
-    }
+  }
 }
 

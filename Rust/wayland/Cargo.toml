@@ -3,6 +3,7 @@
 # cargo run --bin wayland-02-list_interfaces-opengl_vulkan
 # cargo run --bin wayland-02-list_interfaces-opengl_vulkan --no-default-features
 # cargo run --bin wayland-03-shm_software_rendering
+# cargo run --bin wayland-04-shm_software_rendering-redraw
 # ...
 # cargo run --bin wayland-08bis-input_shell-libdecor --features libdecor
 
@@ -18,9 +19,10 @@ homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/wayla
 license = "GPL-3.0-or-later"
 
 [dependencies]
-nix = { version = "0.27", features = ["mman", "fs"] }
 wayland-client = { version = "0.31.0" }
 wayland-protocols = { version = "0.32.0" , features = ["client"] }
+nix = { version = "0.27", features = ["mman", "fs"] }
+memmap2 = { version = "0.9" }
 
 [features]
 default = ["vulkan"]
