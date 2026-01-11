@@ -30,6 +30,9 @@
 #include <unistd.h>      // for 'syscall()'
 #include <stdint.h>      // for uint32_t
 
+#include <linux/prctl.h> // for 'PR_*'
+#include <sys/prctl.h>   // for 'prctl()'
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -82,6 +85,11 @@ int main(int argc, char* argv[])
 
     if (landlock_add_rule(fd, LANDLOCK_RULE_PATH_BENEATH, &path_rules, 0)) {
         fprintf(stderr, "Could not add Landlock path rule, exiting...\n");
+        goto error;
+    }
+
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
+        fprintf(stderr, "Could not restrict privileges, exiting...\n");
         goto error;
     }
 

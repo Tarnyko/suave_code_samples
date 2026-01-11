@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::error::Error;
 
 use landlock::{
-    Ruleset, RulesetAttr, RulesetCreatedAttr,
+    Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
     AccessFs, path_beneath_rules
 };
 
@@ -37,8 +37,11 @@ fn main() -> Result<(), Box<dyn Error>>
                     )) else {
             return Err("Could not add Landlock path rule, exiting...".into()); };
 
-        let Ok(_) = path_rules.restrict_self() else {
+        let Ok(status) = path_rules.restrict_self() else {
             return Err("Could not enforce Landlock policy, exiting...".into()); };
+
+        if let RulesetStatus::NotEnforced { .. } = status.ruleset {
+            return Err("Landlock policy was not enforced, exiting...".into()); };
     }
 
 
