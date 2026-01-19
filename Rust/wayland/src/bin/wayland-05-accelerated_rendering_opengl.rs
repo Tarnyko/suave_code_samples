@@ -1,22 +1,15 @@
 use std::env;
-use std::array::from_fn;
-use std::os::fd::AsFd;
+use std::ffi::CStr;
 use std::error::Error;
 
-use nix::sys::mman::{shm_open, shm_unlink};
-use nix::fcntl::OFlag;
-use nix::sys::stat::Mode;
-use nix::unistd::ftruncate;
-use memmap2::MmapMut;
-
 use wayland_client::{
-    Connection, EventQueue, QueueHandle, Dispatch,
-    protocol::wl_registry, protocol::wl_compositor, protocol::wl_surface,
-    protocol::wl_shell, protocol::wl_shell_surface, protocol::wl_buffer,
-    protocol::wl_shm, protocol::wl_shm_pool, protocol::wl_callback,
+    Connection, EventQueue, QueueHandle, Dispatch, Proxy,
+    protocol::wl_display, protocol::wl_registry, protocol::wl_compositor,
+    protocol::wl_surface, protocol::wl_shell, protocol::wl_shell_surface,
     delegate_noop
 };
 use wayland_protocols::xdg::shell::client::{xdg_wm_base, xdg_surface, xdg_toplevel};
+use wayland_egl::WlEglSurface;
 
 
 enum CompositorId { Unknown, Weston, GNOME, KDE, WlRoots }
@@ -36,29 +29,22 @@ struct InterfaceInfo {
     wl_shell:      Option<wl_shell::WlShell>,           // window manager (deprecated)
     xdg_wm_base:   Option<xdg_wm_base::XdgWmBase>,      // window manager (stable)
 
-    shm:           Option<wl_shm::WlShm>,               // software renderer
+    egl_display:   Option<egli::Display>,               // EGL: display
+    egl_context:   Option<egli::Context>,               //      context
+    egl_config:    Option<egli::FrameBufferConfigRef>,  //      config
+
+    has_opengl:    bool,
+    has_opengles:  bool,
 
     window: Option<Window>,
     shell_surface_is_configured: bool,
 }
 
 
-const BUFFER_MOTIF: &[u8] = &[0x00,0x00,0x00,0x00,0x42,0x42,0x42,0x42,
-                              0xBB,0xBB,0xBB,0xBB,0xCA,0xCA,0xCA,0xCA];
-const BUFFER_COUNT: usize = 2;
-
-struct Buffer {
-    shm_id:    String,                          // UNIX shared memory namespace...
-    data:      MmapMut,                         // mem-mapped to a Raw buffer...
-    buffer:    wl_buffer::WlBuffer,             // mapped to a Wayland buffer.
-    motif_pos: usize,
-}
-
 struct Window {
-    buffer_current: usize,
-    buffers:        [Buffer; BUFFER_COUNT],          // OS/Wayland buffer waiting for...
-    callback:       Option<wl_callback::WlCallback>, // a redraw callback that fires...
-    surface:        wl_surface::WlSurface,           // ...on a Wayland surface...
+    egl_surface:    egli::Surface,                   // EGL surface attached to...
+    _egl_window:    WlEglSurface,                    // ...a Wayland-EGL glue to...
+    _surface:       wl_surface::WlSurface,           // ...a Wayland surface...
     _shell_surface: ShellSurface,                    // ...handled by a window manager.
 
     width:        i32,
@@ -77,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>>
                     $ export WAYLAND_DISPLAY=wayland-0\n\n".into());
     };
 
-    let display = connection.display();
+    let mut display = connection.display();
 
     // listen for asynchronous callbacks with an 'InterfaceInfo' struct attached
     let mut queue: EventQueue<InterfaceInfo> = connection.new_event_queue();
@@ -99,15 +85,23 @@ fn main() -> Result<(), Box<dyn Error>>
         _                     => println!("Unknown...\n")
     }
 
-    // no need to bother if 'wl_shm' (software rendering) is not available
-    if let None = info.shm {
-        return Err("No software rendering 'wl_shm' interface found! Exiting...".into()); }
-
     // choose a shell/window manager protocol
     match elect_shell(&mut info) {
         Err(_)         => return Err("No compatible shell found! Exiting....".into()),
         Ok(shell_name) => println!("Shell: '{}'\n", shell_name),
     }
+
+    // check & initialize EGL/OpenGL
+    match initialize_egl(&mut info, &mut display) {
+        Err(e) => {
+            let msg = format!("Could not initialize EGL: {}! Exiting...", e);
+            return Err(msg.into());
+        },
+        Ok(_)  => {
+            if !info.has_opengl && !info.has_opengles {
+                return Err("No valid OpenGL(ES) implementation found! Exiting...".into()); }
+        },
+    };
 
     match create_window(&mut info, queue, &args[0], 320, 240) {
         Err(e)         => {
@@ -117,17 +111,13 @@ fn main() -> Result<(), Box<dyn Error>>
         Ok((window, mut queue)) => {
             info.window = Some(window);
 
-            // first 'redraw_window()' will call itself infinitely through 'wl_callback'
-            redraw_window(&mut info);
-
             // MAIN LOOP
             println!("Looping...\n");
             loop {
                 let Ok(_) = queue.blocking_dispatch(&mut info) else {
                     break; };
+                redraw_window(&mut info);
             }
-
-            destroy_window(&mut info);
         }
     }
 
@@ -174,13 +164,76 @@ fn create_shell_surface(info: &mut InterfaceInfo,
     }
 }
 
+fn initialize_egl(info: &mut InterfaceInfo, display: &mut wl_display::WlDisplay) -> Result<(), String>
+{
+    let Ok(egl_display) = egli::Display::from_display_id(display.id().as_ptr() as *mut _) else {
+        return Err("error getting EGL display from Wayland display".to_string()); };
+
+    let Ok(version) = egl_display.initialize_and_get_version() else {
+        return Err("display initialization error".to_string()); };
+
+    let vendor = egl_display.query_vendor().unwrap();
+
+    println!("EGL version:\t {}.{} [{}]\n", version.major, version.minor, vendor);
+
+    let apis = egl_display.query_client_apis().unwrap().split_whitespace();
+    let v_apis: Vec<&str> = apis.collect();
+    info.has_opengl = v_apis.contains(&"OpenGL");
+    info.has_opengles = v_apis.contains(&"OpenGL_ES");
+
+    let configs = egl_display.config_filter()
+        .with_red_size(8).with_green_size(8).with_blue_size(8)
+        .with_depth_size(24)
+        .with_surface_type(egli::SurfaceType::WINDOW)
+        .with_renderable_type(if info.has_opengles
+                              { egli::RenderableType::OPENGL_ES } else
+                              { egli::RenderableType::OPENGL })
+        .choose_configs().unwrap();
+    if configs.len() == 0 {
+        return Err("no suitable configuration found".to_string()); }
+    let egl_config = configs[0];
+
+    let Ok(egl_context) = egl_display.create_context(egl_config) else {
+        return Err("context creation error".to_string()); };
+
+    info.egl_display = Some(egl_display);
+    info.egl_context = Some(egl_context);
+    info.egl_config  = Some(egl_config);
+
+    Ok(())
+}
+
 fn create_window(info: &mut InterfaceInfo, mut queue: EventQueue<InterfaceInfo>, title: &str,
                  width: i32, height:i32) -> Result<(Window, EventQueue<InterfaceInfo>), String>
 {
     let Some(compositor) = &info.compositor else {
         return Err("compositor interface not found".to_string());};
+    let Some(egl_display) = &info.egl_display else {
+        return Err("EGL display not found".to_string());};
+    let Some(egl_context) = &info.egl_context else {
+        return Err("EGL context not found".to_string());};
 
     let surface = compositor.create_surface(&info.queue_h, ());
+
+    let Ok(egl_window) = WlEglSurface::new(surface.id(), width, height) else {
+        return Err("could not create EGL window".to_string()); };
+
+    let Ok(egl_surface) = egl_display.create_window_surface(info.egl_config.unwrap(),
+                                          egl_window.ptr() as *mut _) else {
+        return Err("could not create EGL surface".to_string()); };
+
+    egl_display.make_current(&egl_surface, &egl_surface, egl_context).unwrap();
+
+    // Bind all future "gl::[fct]()" calls
+    gl::load_with(|fct| egli::egl::get_proc_address(fct) as *const _);
+
+    unsafe {
+        // SAFETY: OpenGL cannot be proven safe by Rust
+        let version = CStr::from_ptr(gl::GetString(gl::VERSION) as *const i8);
+        let vendor = CStr::from_ptr(gl::GetString(gl::VENDOR) as *const i8);
+        println!("OpenGL version:\t {} [{}]", version.to_string_lossy(),
+                                              vendor.to_string_lossy());
+    }
 
     let Ok(shell_surface) = create_shell_surface(info, &surface, title) else {
         return Err("could not create shell surface".to_string()); };
@@ -192,41 +245,9 @@ fn create_window(info: &mut InterfaceInfo, mut queue: EventQueue<InterfaceInfo>,
     while !&info.shell_surface_is_configured {
         queue.roundtrip(info).unwrap(); }
 
-    let buffers: [Option<Buffer>; BUFFER_COUNT] = from_fn(|i|
-    {
-        // 1) create a POSIX shared memory object (name must contain a single '/')
-        let shm_id = format!("/{}-{}", &title.replace("/", ""), &i);
-        let Ok(fd) = shm_open(shm_id.as_str(), OFlag::O_CREAT | OFlag::O_RDWR,
-                              Mode::from_bits_truncate(0600)) else {
-            return None };
-        // allocate as much raw bytes as needed pixels in the file descriptor
-        let Ok(_) = ftruncate(&fd, (width * height * 4).into()) else {  // *4 = RGBA
-            return None };
-
-        // 2) write White pixels (0xFF) to it
-        let mut data = unsafe {
-            // SAFETY: fd checked just before
-            MmapMut::map_mut(&fd).unwrap()
-        };
-        data[..].fill(0xFFu8);
-
-        // 3) pass the descriptor to the compositor through its 'wl_shm_pool' interface
-        let shm = info.shm.as_ref().unwrap();
-        let pool = shm.create_pool(fd.as_fd(), width * height * 4, &info.queue_h, ());
-        // and create the final 'wl_buffer' abstraction
-        let buffer = pool.create_buffer(0, width, height, width * 4,
-                                        wl_shm::Format::Xrgb8888, &info.queue_h, ());
-
-        Some(Buffer { shm_id, data, buffer, motif_pos: 0 })
-    });
-    if buffers.iter().any(|b| b.is_none()) {
-        return Err("could not create shared memory namespace/out of memory".to_string()); }
-
     let window = Window {
-        buffer_current: 0,
-        buffers: buffers.map(|b| b.unwrap()),
-        callback: None,
-        surface, _shell_surface: shell_surface,
+        egl_surface, _egl_window: egl_window,
+        _surface: surface, _shell_surface: shell_surface,
         width, height,
     };
 
@@ -236,44 +257,16 @@ fn create_window(info: &mut InterfaceInfo, mut queue: EventQueue<InterfaceInfo>,
 fn redraw_window(info: &mut InterfaceInfo)
 {
     let window = &mut info.window.as_mut().unwrap();
-    
-    let window_bound: usize = (window.width * window.height * 4)
-                                .try_into().unwrap();
+    let egl_display = &info.egl_display.as_ref().unwrap();
 
-    // 1) swap the current buffer
-    window.buffer_current =
-      if window.buffer_current == BUFFER_COUNT - 1 { 0 }
-      else { window.buffer_current + 1 };
-
-    let buffer = &mut window.buffers[window.buffer_current];
-
-    // 2) update the raw data exposed by our 'wl_buffer'
-    buffer.motif_pos = 
-      if buffer.motif_pos < window_bound - BUFFER_MOTIF.len() {
-          buffer.motif_pos + BUFFER_MOTIF.len()
-      } else {
-          window_bound - buffer.motif_pos
-      };
-    buffer.data[buffer.motif_pos..buffer.motif_pos+BUFFER_MOTIF.len()]
-      .copy_from_slice(BUFFER_MOTIF);
-
-    // 3) attach our 'wl_buffer' to our 'wl_surface'
-    window.surface.attach(Some(&buffer.buffer), 0, 0);
-    window.surface.damage(0, 0, window.width, window.height);
-
-    // 4) set a redraw callback to be fired by the compositor
-    window.callback = Some(window.surface.frame(&info.queue_h, ()));
-
-    // 5) commit our 'wl_surface'!
-    window.surface.commit();
-}
-
-fn destroy_window(info: &mut InterfaceInfo)
-{
-    let window = &mut info.window.as_mut().unwrap();
-
-    for buffer in &window.buffers {
-        shm_unlink(buffer.shm_id.as_str()).unwrap(); }
+    unsafe {
+        // SAFETY: OpenGL cannot be proven safe by Rust
+        // these drawing functions are common to OpenGL & OpenGLES
+        gl::Viewport(0, 0, window.width, window.height);
+        gl::ClearColor(1.0, 1.0, 1.0, 0.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        let _ = egl_display.swap_buffers(&window.egl_surface);
+    }
 }
 
 
@@ -287,7 +280,11 @@ impl  InterfaceInfo {
           shell_id:      ShellId::Unknown,
           wl_shell:      None,
           xdg_wm_base:   None,
-          shm:           None,
+          egl_display:   None,
+          egl_context:   None,
+          egl_config:    None,
+          has_opengl:    false,
+          has_opengles:  false,
           window: None,
           shell_surface_is_configured: false,
       }
@@ -304,7 +301,6 @@ impl Dispatch<wl_registry::WlRegistry, ()> for InterfaceInfo {
       if let wl_registry::Event::Global { interface, name, .. } = event {
           match interface {
             _ if interface == "wl_compositor" => this.compositor  = Some(registry.bind::<wl_compositor::WlCompositor,_,_>(name, 1, &queue_h, ())),
-            _ if interface == "wl_shm"        => this.shm         = Some(registry.bind::<wl_shm::WlShm,_,_>(name, 1, &queue_h, ())),
             _ if interface == "wl_shell"      => this.wl_shell    = Some(registry.bind::<wl_shell::WlShell,_,_>(name, 1, &queue_h, ())),
             _ if interface == "xdg_wm_base"   => this.xdg_wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase,_,_>(name, 1, &queue_h, ())),
             _ if interface.contains("gtk_shell")       => this.compositor_id = CompositorId::GNOME,
@@ -313,20 +309,6 @@ impl Dispatch<wl_registry::WlRegistry, ()> for InterfaceInfo {
             _ if interface.contains("weston")          => this.compositor_id = CompositorId::Weston,
             _ => ()
           }
-      }
-  }
-}
-
-// WAYLAND CALLBACK (= 'REDRAW') CALLBACKS
-impl Dispatch<wl_callback::WlCallback, ()> for InterfaceInfo {
-  fn event(this: &mut Self,
-           _: &wl_callback::WlCallback, event: wl_callback::Event,
-           _: &(), _: &Connection, _: &QueueHandle<InterfaceInfo>)
-  {
-      if let wl_callback::Event::Done { .. } = event {
-          let window = this.window.as_mut().unwrap();
-          window.callback = None;
-          redraw_window(this);
       }
   }
 }
@@ -370,9 +352,6 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for InterfaceInfo {
 // OTHER WAYLAND CALLBACKS (no listeners or not useful yet: avoid implementing their Dispatch)
 delegate_noop!(InterfaceInfo: ignore wl_compositor::WlCompositor);
 delegate_noop!(InterfaceInfo: ignore wl_surface::WlSurface);
-delegate_noop!(InterfaceInfo: ignore wl_shm::WlShm);
-delegate_noop!(InterfaceInfo: ignore wl_shm_pool::WlShmPool);
-delegate_noop!(InterfaceInfo: ignore wl_buffer::WlBuffer);
 delegate_noop!(InterfaceInfo: ignore wl_shell::WlShell);
 delegate_noop!(InterfaceInfo: ignore xdg_toplevel::XdgToplevel);
 

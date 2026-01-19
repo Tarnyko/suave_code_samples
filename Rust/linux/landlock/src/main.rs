@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::ffi::OsStr;
 use std::error::Error;
 
@@ -15,8 +15,8 @@ fn main() -> Result<(), Box<dyn Error>>
 {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        println!("Usage: {0} <filename>\n", &args[0]);
+    if args.len() <= 1 {
+        println!("Usage: {} <filename>\n", &args[0]);
         return Ok(());
     }
 
@@ -45,11 +45,11 @@ fn main() -> Result<(), Box<dyn Error>>
     }
 
 
-    let path = PathBuf::from(&args[1]);
-    if let Ok(_) = fs::File::open(path.as_path()) {
-        println!("Successfully opened '{0}'!", &args[1]);
+    let path = Path::new(&args[1]);
+    if let Ok(_) = fs::File::open(path) {
+        println!("Successfully opened '{}'!", &args[1]);
     } else {
-        println!("Could not open '{0}'...", &args[1]);
+        println!("Could not open '{}'...", &args[1]);
     }
 
     Ok(())

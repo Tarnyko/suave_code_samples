@@ -12,7 +12,7 @@ name = "wayland-samples"
 version = "0.1.0"
 authors = ["Manuel Bachmann <tarnyko@tarnyko.net>"]
 edition = "2021"
-rust-edition = "1.65"
+rust-version = "1.65"
 description = "Wayland API samples"
 repository = "https://github.com/Tarnyko/suave_code_samples"
 homepage = "https://github.com/Tarnyko/suave_code_samples/tree/master/Rust/wayland"
@@ -21,8 +21,11 @@ license = "GPL-3.0-or-later"
 [dependencies]
 wayland-client = { version = "0.31.0" }
 wayland-protocols = { version = "0.32.0" , features = ["client"] }
+wayland-egl = { version = "0.32.0" }
 nix = { version = "0.27", features = ["mman", "fs"] }
 memmap2 = { version = "0.9" }
+egli = { version = "0.5" }
+gl = { version = "0.14" }
 
 [features]
 default = ["vulkan"]
